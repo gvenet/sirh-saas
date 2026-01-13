@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sirh-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sirh_user
+      POSTGRES_PASSWORD: sirh_password
+      POSTGRES_DB: sirh_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - sirh-network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: sirh-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - sirh-network
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+
+networks:
+  sirh-network:
+    driver: bridge
