@@ -34,6 +34,13 @@ export class User {
   @Column({ nullable: true })
   department: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  @Exclude()
+  resetPasswordToken: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  resetPasswordExpires: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

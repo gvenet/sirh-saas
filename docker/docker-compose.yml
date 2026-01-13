@@ -32,6 +32,16 @@ services:
     depends_on:
       - postgres
 
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: sirh-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"  # SMTP server
+      - "8025:8025"  # Web UI
+    networks:
+      - sirh-network
+
 volumes:
   postgres_data:
   pgadmin_data:
