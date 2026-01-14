@@ -2,7 +2,7 @@ import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { Observable, tap } from 'rxjs';
-import { AuthResponse, LoginRequest, SignupRequest, User } from '../models/user.model';
+import { AuthResponse, LoginRequest, SignupRequest, User, Role } from '../models/user.model';
 
 @Injectable({
   providedIn: 'root'
@@ -46,6 +46,23 @@ export class AuthService {
 
   getToken(): string | null {
     return localStorage.getItem(this.TOKEN_KEY);
+  }
+
+  hasRole(role: Role): boolean {
+    const user = this.currentUser();
+    return user?.role === role;
+  }
+
+  isAdmin(): boolean {
+    return this.hasRole(Role.ADMIN);
+  }
+
+  isRH(): boolean {
+    return this.hasRole(Role.RH);
+  }
+
+  isAgent(): boolean {
+    return this.hasRole(Role.AGENT);
   }
 
   private handleAuthSuccess(response: AuthResponse): void {

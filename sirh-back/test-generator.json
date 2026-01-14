@@ -1,0 +1,32 @@
+{
+  "name": "employee",
+  "tableName": "employees",
+  "fields": [
+    {
+      "name": "firstName",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "lastName",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "email",
+      "type": "email",
+      "required": true,
+      "unique": true
+    },
+    {
+      "name": "hireDate",
+      "type": "date",
+      "required": true
+    },
+    {
+      "name": "salary",
+      "type": "number",
+      "required": false
+    }
+  ]
+}

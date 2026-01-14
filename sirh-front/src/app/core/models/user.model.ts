@@ -1,8 +1,15 @@
+export enum Role {
+  ADMIN = 'admin',
+  RH = 'rh',
+  AGENT = 'agent',
+}
+
 export interface User {
   id: string;
   email: string;
   firstName: string;
   lastName: string;
+  role: Role;
   position?: string;
   department?: string;
   isActive: boolean;

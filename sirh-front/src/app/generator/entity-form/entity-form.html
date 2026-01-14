@@ -1,0 +1,160 @@
+<div class="page-wrapper">
+  <nav class="page-nav">
+    <div class="nav-content">
+      <div class="nav-left">
+        <a routerLink="/dashboard" class="nav-back">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+          </svg>
+          Dashboard
+        </a>
+        <h1>{{ isEditMode ? 'Edit Entity' : 'New Entity' }}</h1>
+      </div>
+      <div class="nav-right">
+        <a routerLink="/generator/list" class="nav-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/>
+          </svg>
+          All Entities
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="entity-form-container">
+
+  @if (error) {
+    <div class="alert alert-error">
+      {{ error }}
+    </div>
+  }
+
+  @if (success) {
+    <div class="alert alert-success">
+      {{ success }}
+    </div>
+  }
+
+  <form [formGroup]="entityForm" (ngSubmit)="onSubmit()">
+    <div class="form-section">
+      <h3>Entity Information</h3>
+
+      <div class="form-group">
+        <label for="name">Entity Name (PascalCase)</label>
+        <input
+          id="name"
+          type="text"
+          formControlName="name"
+          placeholder="e.g., Employee"
+          class="form-control"
+        />
+        @if (entityForm.get('name')?.invalid && entityForm.get('name')?.touched) {
+          <small class="error-text">Entity name must start with uppercase letter</small>
+        }
+      </div>
+
+      <div class="form-group">
+        <label for="tableName">Table Name (snake_case)</label>
+        <input
+          id="tableName"
+          type="text"
+          formControlName="tableName"
+          placeholder="e.g., employees"
+          class="form-control"
+        />
+        @if (entityForm.get('tableName')?.invalid && entityForm.get('tableName')?.touched) {
+          <small class="error-text">Table name must be in snake_case</small>
+        }
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="section-header">
+        <h3>Fields</h3>
+        <button type="button" class="btn btn-secondary" (click)="addField()">
+          Add Field
+        </button>
+      </div>
+
+      @if (fields.length === 0) {
+        <p class="no-fields">No fields added yet. Click "Add Field" to start.</p>
+      }
+
+      <div formArrayName="fields" class="fields-table">
+        @if (fields.length > 0) {
+          <div class="table-header">
+            <div class="col-name">Name</div>
+            <div class="col-type">Type</div>
+            <div class="col-options">Options</div>
+            <div class="col-default">Default</div>
+            <div class="col-actions"></div>
+          </div>
+        }
+
+        @for (field of fields.controls; track $index) {
+          <div [formGroupName]="$index" class="field-row">
+            <div class="col-name">
+              <input
+                type="text"
+                formControlName="name"
+                placeholder="fieldName"
+                class="form-control-compact"
+              />
+            </div>
+
+            <div class="col-type">
+              <select formControlName="type" class="form-control-compact">
+                @for (type of fieldTypes; track type) {
+                  <option [value]="type">{{ type }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="col-options">
+              <label class="checkbox-inline">
+                <input type="checkbox" formControlName="required" />
+                <span>Required</span>
+              </label>
+              <label class="checkbox-inline">
+                <input type="checkbox" formControlName="unique" />
+                <span>Unique</span>
+              </label>
+            </div>
+
+            <div class="col-default">
+              <input
+                type="text"
+                formControlName="defaultValue"
+                placeholder="Optional"
+                class="form-control-compact"
+              />
+            </div>
+
+            <div class="col-actions">
+              <button type="button" class="btn-icon-remove" (click)="removeField($index)" title="Remove field">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button
+        type="submit"
+        class="btn btn-primary"
+        [disabled]="entityForm.invalid || loading"
+      >
+        @if (loading) {
+          {{ isEditMode ? 'Updating...' : 'Generating...' }}
+        } @else {
+          {{ isEditMode ? 'Update Entity' : 'Generate Entity' }}
+        }
+      </button>
+    </div>
+  </form>
+  </div>
+</div>

@@ -176,6 +176,60 @@
   background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
 }
 
+.card-icon.teal {
+  background: linear-gradient(135deg, #38b2ac 0%, #319795 100%);
+}
+
+.card-icon.indigo {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.card-icon.gradient-purple {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(102, 126, 234, 0);
+  }
+}
+
+.admin-card .card-icon svg {
+  animation: rotate 20s linear infinite;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.admin-card:hover .card-icon svg {
+  animation: rotate 2s linear infinite;
+}
+
+.card-clickable {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.card-clickable:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 16px 32px rgba(56, 178, 172, 0.25);
+}
+
+.admin-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 16px 32px rgba(102, 126, 234, 0.35);
+}
+
 .card-content {
   flex: 1;
 }

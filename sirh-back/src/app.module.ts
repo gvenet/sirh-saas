@@ -5,6 +5,11 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { GeneratorModule } from './generator/generator.module';
+import { EmployeeModule } from './employee/employee.module';
+import { ProductModule } from './product/product.module';
+import { SkillModule } from './skill/skill.module';
+import { TestModule } from './test/test.module';
 
 @Module({
   imports: [
@@ -13,7 +18,8 @@ import { UsersModule } from './users/users.module';
       envFilePath: '.env',
     }),
     TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
+imports: [ConfigModule,
+    TestModule,],
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
         host: configService.get('DB_HOST'),
@@ -29,6 +35,10 @@ import { UsersModule } from './users/users.module';
     }),
     AuthModule,
     UsersModule,
+    GeneratorModule,
+    EmployeeModule,
+    ProductModule,
+    SkillModule,
   ],
   controllers: [AppController],
   providers: [AppService],
