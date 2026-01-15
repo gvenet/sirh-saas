@@ -41,6 +41,7 @@ db-logs:
 # Développement
 dev-front:
 	@echo "🅰️  Démarrage du frontend Angular..."
+	lsof -ti:4200 | xargs -r kill -9 && sleep 3 && lsof -ti:4200 && echo "Port still in use" || echo "Port 4200 is now free"
 	cd sirh-front && npm start
 
 dev-back:
