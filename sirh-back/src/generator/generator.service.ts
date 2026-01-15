@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { CreateEntityDto } from './dto/create-entity.dto';
 import { FieldDto, FieldType, isRelationType } from './dto/field.dto';
+import { EntityPageService } from '../entity-page/entity-page.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -9,7 +10,10 @@ import * as path from 'path';
 export class GeneratorService {
   private readonly srcPath = path.join(process.cwd(), 'src');
 
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly entityPageService: EntityPageService,
+  ) {}
 
   async generateEntity(createEntityDto: CreateEntityDto) {
     const { name, tableName, fields } = createEntityDto;
@@ -40,6 +44,9 @@ export class GeneratorService {
 
     // Mettre à jour app.module.ts
     await this.updateAppModule(entityName, moduleName);
+
+    // Générer les pages par défaut (view et edit)
+    await this.entityPageService.generateDefaultPages(entityName, fields);
 
     return {
       message: `Entity ${entityName} generated successfully`,
@@ -1098,6 +1105,7 @@ export class ${entityName}Module {}
 
   async deleteEntity(name: string, removeFromAppModule: boolean = true, dropTable: boolean = true) {
     const moduleName = name.toLowerCase();
+    const entityName = this.capitalize(name);
     const entityPath = path.join(this.srcPath, moduleName);
 
     if (!fs.existsSync(entityPath)) {
@@ -1131,6 +1139,9 @@ export class ${entityName}Module {}
     if (dropTable && tableName) {
       await this.dropTableFromDatabase(tableName, relationTables);
     }
+
+    // Supprimer les pages associées à cette entité
+    await this.entityPageService.removeByEntity(entityName);
 
     return {
       message: `Entity ${name} deleted successfully`,

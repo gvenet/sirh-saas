@@ -9,6 +9,10 @@ export class CreateMenuItemDto {
   entityName?: string;
 
   @IsOptional()
+  @IsUUID()
+  pageId?: string;
+
+  @IsOptional()
   @IsString()
   route?: string;
 
@@ -36,6 +40,10 @@ export class UpdateMenuItemDto {
   @IsOptional()
   @IsString()
   entityName?: string;
+
+  @IsOptional()
+  @IsUUID()
+  pageId?: string;
 
   @IsOptional()
   @IsString()

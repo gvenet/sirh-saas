@@ -2,6 +2,7 @@ export interface MenuItem {
   id: string;
   label: string;
   entityName?: string;
+  pageId?: string;
   route?: string;
   icon?: string;
   order: number;
@@ -28,6 +29,7 @@ export interface CreateApplicationDto {
 export interface CreateMenuItemDto {
   label: string;
   entityName?: string;
+  pageId?: string;
   route?: string;
   icon?: string;
   order?: number;

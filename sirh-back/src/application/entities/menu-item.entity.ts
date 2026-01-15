@@ -13,6 +13,9 @@ export class MenuItem {
   entityName: string;
 
   @Column({ nullable: true })
+  pageId: string; // Référence vers une EntityPage spécifique
+
+  @Column({ nullable: true })
   route: string;
 
   @Column({ nullable: true })

@@ -9,6 +9,7 @@ import { GeneratorModule } from './generator/generator.module';
 import { EmployeeModule } from './employee/employee.module';
 import { SkillModule } from './skill/skill.module';
 import { ApplicationModule } from './application/application.module';
+import { EntityPageModule } from './entity-page/entity-page.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { ApplicationModule } from './application/application.module';
     UsersModule,
     GeneratorModule,
     ApplicationModule,
+    EntityPageModule,
   ],
   controllers: [AppController],
   providers: [AppService],
