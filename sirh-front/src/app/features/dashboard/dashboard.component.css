@@ -1,6 +1,219 @@
 .dashboard-container {
   min-height: 100vh;
   background: #f7fafc;
+  display: flex;
+}
+
+.main-wrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 260px;
+  background: white;
+  border-right: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  flex-shrink: 0;
+}
+
+/* Dropdown dans la sidebar */
+.sidebar-dropdown {
+  padding: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+  position: relative;
+}
+
+.sidebar-dropdown .dropdown-trigger {
+  width: 100%;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  color: white;
+  font-size: 0.95rem;
+}
+
+.sidebar-dropdown .dropdown-trigger:hover {
+  background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+  border: none;
+}
+
+.sidebar-dropdown .dropdown-trigger .selected-app,
+.sidebar-dropdown .dropdown-trigger .placeholder {
+  color: white;
+}
+
+.sidebar-dropdown .dropdown-arrow {
+  color: white;
+}
+
+.sidebar-dropdown .dropdown-menu {
+  left: 1rem;
+  right: 1rem;
+  min-width: auto;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 0.75rem;
+  overflow-y: auto;
+}
+
+.sidebar-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: transparent;
+  color: #4a5568;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-align: left;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sidebar-item:hover {
+  background: #f7fafc;
+  color: #667eea;
+}
+
+.sidebar-item.active {
+  background: #ebf4ff;
+  color: #667eea;
+  font-weight: 600;
+}
+
+.sidebar-item svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.sidebar-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: #a0aec0;
+  font-size: 0.875rem;
+}
+
+/* App Dropdown */
+.app-dropdown {
+  position: relative;
+}
+
+.dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #4a5568;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dropdown-trigger:hover {
+  background: #edf2f7;
+  border-color: #cbd5e0;
+}
+
+.dropdown-trigger .selected-app {
+  color: #667eea;
+  font-weight: 600;
+}
+
+.dropdown-trigger .placeholder {
+  color: #718096;
+}
+
+.dropdown-arrow {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.2s;
+}
+
+.dropdown-arrow.open {
+  transform: rotate(180deg);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: transparent;
+  color: #4a5568;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.dropdown-item:hover {
+  background: #f7fafc;
+  color: #667eea;
+}
+
+.dropdown-item.active {
+  background: #ebf4ff;
+  color: #667eea;
+  font-weight: 600;
+}
+
+.dropdown-item.clear-item {
+  color: #e53e3e;
+}
+
+.dropdown-item.clear-item:hover {
+  background: #fff5f5;
+  color: #c53030;
+}
+
+.dropdown-item svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 0.25rem 0;
+}
+
+.dropdown-empty {
+  padding: 1rem;
+  text-align: center;
+  color: #a0aec0;
+  font-size: 0.875rem;
 }
 
 .navbar {
@@ -376,6 +589,22 @@
 }
 
 @media (max-width: 768px) {
+  .dashboard-container {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: relative;
+    border-right: none;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .sidebar-nav {
+    max-height: 200px;
+  }
+
   .navbar-content {
     flex-direction: column;
     gap: 1rem;
@@ -401,5 +630,9 @@
 
   .profile-card {
     grid-template-columns: 1fr;
+  }
+
+  .dropdown-menu {
+    min-width: 180px;
   }
 }

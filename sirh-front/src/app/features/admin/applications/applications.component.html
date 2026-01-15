@@ -1,0 +1,210 @@
+<div class="admin-wrapper">
+  <app-admin-navbar></app-admin-navbar>
+
+  <div class="page-subnav">
+    <div class="subnav-content">
+      <div class="subnav-left">
+        <a routerLink="/admin" class="subnav-back">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+          </svg>
+          Retour
+        </a>
+        <div class="subnav-title">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/>
+          </svg>
+          <span>Gestion des Applications</span>
+        </div>
+      </div>
+      <div class="subnav-right">
+        <button class="btn-action btn-create" (click)="openAppModal()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+          </svg>
+          Nouvelle Application
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="applications-container">
+    @if (error) {
+      <div class="alert alert-error">{{ error }}</div>
+    }
+
+    @if (loading) {
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <p>Chargement...</p>
+      </div>
+    } @else if (applications.length === 0) {
+      <div class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/>
+        </svg>
+        <p>Aucune application configurée</p>
+        <button class="btn btn-primary" (click)="openAppModal()">Créer une application</button>
+      </div>
+    } @else {
+      <div class="apps-list">
+        @for (app of applications; track app.id) {
+          <div class="app-card">
+            <div class="app-header">
+              <div class="app-info">
+                <h3>{{ app.name }}</h3>
+                <span class="app-order">Ordre: {{ app.order }}</span>
+              </div>
+              <div class="app-actions">
+                <button class="btn-icon btn-add" title="Ajouter un menu" (click)="openMenuModal(app)">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                  </svg>
+                </button>
+                <button class="btn-icon btn-edit" title="Modifier" (click)="openAppModal(app)">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                  </svg>
+                </button>
+                <button class="btn-icon btn-delete" title="Supprimer" (click)="deleteApp(app)">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="menu-list">
+              @if (app.menuItems && app.menuItems.length > 0) {
+                @for (menu of app.menuItems; track menu.id) {
+                  <div class="menu-item">
+                    <div class="menu-info">
+                      <span class="menu-label">{{ menu.label }}</span>
+                      @if (menu.entityName) {
+                        <span class="menu-entity">Entité: {{ menu.entityName }}</span>
+                      }
+                      @if (menu.route) {
+                        <span class="menu-route">Route: {{ menu.route }}</span>
+                      }
+                    </div>
+                    <div class="menu-actions">
+                      <button class="btn-icon-sm btn-edit" (click)="openMenuModal(app, menu)">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                        </svg>
+                      </button>
+                      <button class="btn-icon-sm btn-delete" (click)="deleteMenu(menu)">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                }
+              } @else {
+                <div class="menu-empty">Aucun menu configuré</div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- App Modal -->
+  @if (showAppModal) {
+    <div class="modal-backdrop" (click)="closeAppModal()">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3>{{ editingApp ? 'Modifier' : 'Nouvelle' }} Application</h3>
+          <button class="modal-close" (click)="closeAppModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Nom *</label>
+            <input type="text" [(ngModel)]="appForm.name" placeholder="Gestion Administrative" />
+          </div>
+          <div class="form-group">
+            <label>Icône</label>
+            <input type="text" [(ngModel)]="appForm.icon" placeholder="settings" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Ordre</label>
+              <input type="number" [(ngModel)]="appForm.order" />
+            </div>
+            <div class="form-group checkbox-group">
+              <label class="checkbox-label">
+                <input type="checkbox" [(ngModel)]="appForm.active" />
+                <span>Actif</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" (click)="closeAppModal()">Annuler</button>
+          <button class="btn btn-primary" (click)="saveApp()" [disabled]="!appForm.name.trim()">
+            {{ editingApp ? 'Mettre à jour' : 'Créer' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Menu Modal -->
+  @if (showMenuModal) {
+    <div class="modal-backdrop" (click)="closeMenuModal()">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3>{{ editingMenu ? 'Modifier' : 'Nouveau' }} Menu</h3>
+          <button class="modal-close" (click)="closeMenuModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Label *</label>
+            <input type="text" [(ngModel)]="menuForm.label" placeholder="Employés" />
+          </div>
+          <div class="form-group">
+            <label>Entité (pour CRUD auto)</label>
+            <select [(ngModel)]="menuForm.entityName">
+              <option value="">-- Aucune --</option>
+              @for (entity of entities; track entity.name) {
+                <option [value]="entity.name">{{ entity.name }}</option>
+              }
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Route personnalisée</label>
+            <input type="text" [(ngModel)]="menuForm.route" placeholder="/custom/route" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Ordre</label>
+              <input type="number" [(ngModel)]="menuForm.order" />
+            </div>
+            <div class="form-group checkbox-group">
+              <label class="checkbox-label">
+                <input type="checkbox" [(ngModel)]="menuForm.active" />
+                <span>Actif</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" (click)="closeMenuModal()">Annuler</button>
+          <button class="btn btn-primary" (click)="saveMenu()" [disabled]="!menuForm.label.trim()">
+            {{ editingMenu ? 'Mettre à jour' : 'Créer' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

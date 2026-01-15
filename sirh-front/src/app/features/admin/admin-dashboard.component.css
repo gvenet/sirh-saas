@@ -169,6 +169,10 @@ section h2 {
   background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
 }
 
+.tool-icon.indigo {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
 .tool-icon svg {
   width: 28px;
   height: 28px;

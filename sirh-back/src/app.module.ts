@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module';
 import { GeneratorModule } from './generator/generator.module';
 import { EmployeeModule } from './employee/employee.module';
 import { SkillModule } from './skill/skill.module';
+import { ApplicationModule } from './application/application.module';
 
 @Module({
   imports: [
@@ -16,10 +17,7 @@ import { SkillModule } from './skill/skill.module';
       envFilePath: '.env',
     }),
     TypeOrmModule.forRootAsync({
-imports: [ConfigModule,
-
-    EmployeeModule,
-    SkillModule,],
+      imports: [ConfigModule, EmployeeModule, SkillModule],
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
         host: configService.get('DB_HOST'),
@@ -36,7 +34,8 @@ imports: [ConfigModule,
     AuthModule,
     UsersModule,
     GeneratorModule,
-],
+    ApplicationModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
