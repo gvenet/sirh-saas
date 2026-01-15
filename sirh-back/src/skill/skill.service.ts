@@ -18,11 +18,14 @@ export class SkillService {
   }
 
   async findAll(): Promise<Skill[]> {
-    return this.skillRepository.find();
+    return this.skillRepository.find({ relations: ['employees'] });
   }
 
   async findOne(id: string): Promise<Skill> {
-    const skill = await this.skillRepository.findOne({ where: { id } });
+    const skill = await this.skillRepository.findOne({
+      where: { id },
+      relations: ['employees'],
+    });
     if (!skill) {
       throw new NotFoundException(`Skill with ID ${id} not found`);
     }

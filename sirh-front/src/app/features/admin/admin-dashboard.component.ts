@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
-import { AuthService } from '../../core/services/auth.service';
+import { AdminNavbarComponent } from '../../shared/components/admin-navbar/admin-navbar.component';
 
 interface StatCard {
   title: string;
@@ -14,7 +14,7 @@ interface StatCard {
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, AdminNavbarComponent],
   templateUrl: './admin-dashboard.component.html',
   styleUrl: './admin-dashboard.component.css'
 })
@@ -51,15 +51,10 @@ export class AdminDashboardComponent implements OnInit {
   ];
 
   constructor(
-    public authService: AuthService,
     private router: Router
   ) {}
 
   ngOnInit(): void {
     // TODO: Charger les statistiques réelles depuis l'API
-  }
-
-  logout(): void {
-    this.authService.logout();
   }
 }

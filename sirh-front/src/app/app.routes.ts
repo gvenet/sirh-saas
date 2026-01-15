@@ -34,6 +34,11 @@ export const routes: Routes = [
     canActivate: [authGuard, adminGuard]
   },
   {
+    path: 'profile',
+    loadComponent: () => import('./features/profile/profile.component').then(m => m.ProfileComponent),
+    canActivate: [authGuard]
+  },
+  {
     path: 'generator',
     loadComponent: () => import('./generator/entity-form/entity-form').then(m => m.EntityFormComponent),
     canActivate: [authGuard, adminGuard]

@@ -65,6 +65,13 @@ export class AuthService {
     return this.hasRole(Role.AGENT);
   }
 
+  changePassword(currentPassword: string, newPassword: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.API_URL}/change-password`, {
+      currentPassword,
+      newPassword
+    });
+  }
+
   private handleAuthSuccess(response: AuthResponse): void {
     localStorage.setItem(this.TOKEN_KEY, response.access_token);
     localStorage.setItem(this.USER_KEY, JSON.stringify(response.user));

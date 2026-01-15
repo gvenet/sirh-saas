@@ -1,28 +1,26 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToMany } from 'typeorm';
+import { Skill } from '../skill/skill.entity';
+    
+    @Entity('employees')
+    export class Employee {
+      @PrimaryGeneratedColumn('uuid')
+      id: string;
 
-@Entity('employees')
-export class Employee {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+      @Column({ type: 'varchar' })
+  name: string;  @ManyToMany(() => Skill, skill => skill.employees)
+  skills: Skill[];
 
-  @Column({ type: 'varchar' })
-  firstName: string;
 
-  @Column({ type: 'varchar' })
-  lastName: string;
 
-  @Column({ type: 'varchar', unique: true })
-  email: string;
 
-  @Column({ type: 'timestamp' })
-  hireDate: Date;
 
-  @Column({ type: 'int', nullable: true })
-  salary: number;
 
-  @CreateDateColumn()
-  createdAt: Date;
-
-  @UpdateDateColumn()
-  updatedAt: Date;
-}
+    
+        
+      @CreateDateColumn()
+      createdAt: Date;
+        
+      @UpdateDateColumn()
+      updatedAt: Date;
+    }
+    

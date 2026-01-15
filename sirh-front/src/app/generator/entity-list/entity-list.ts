@@ -3,10 +3,11 @@ import { CommonModule } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { GeneratorService } from '../services/generator';
 import { EntityInfo } from '../models/field.model';
+import { AdminNavbarComponent } from '../../shared/components/admin-navbar/admin-navbar.component';
 
 @Component({
   selector: 'app-entity-list',
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, AdminNavbarComponent],
   templateUrl: './entity-list.html',
   styleUrl: './entity-list.css',
   standalone: true,

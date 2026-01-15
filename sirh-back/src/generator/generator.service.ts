@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { CreateEntityDto } from './dto/create-entity.dto';
-import { FieldDto, FieldType } from './dto/field.dto';
+import { FieldDto, FieldType, isRelationType } from './dto/field.dto';
 import * as fs from 'fs';
 import * as path from 'path';
 
 @Injectable()
 export class GeneratorService {
   private readonly srcPath = path.join(process.cwd(), 'src');
+
+  constructor(private readonly dataSource: DataSource) {}
 
   async generateEntity(createEntityDto: CreateEntityDto) {
     const { name, tableName, fields } = createEntityDto;
@@ -28,9 +31,12 @@ export class GeneratorService {
     // Générer tous les fichiers
     await this.generateEntityFile(modulePath, entityName, tableName, fields);
     await this.generateDtoFiles(modulePath, entityName, fields);
-    await this.generateServiceFile(modulePath, entityName, moduleName);
+    await this.generateServiceFile(modulePath, entityName, moduleName, fields);
     await this.generateControllerFile(modulePath, entityName, moduleName);
     await this.generateModuleFile(modulePath, entityName, moduleName);
+
+    // Ajouter les relations inverses sur les entités cibles
+    await this.addInverseRelationsToTargetEntities(entityName, fields);
 
     // Mettre à jour app.module.ts
     await this.updateAppModule(entityName, moduleName);
@@ -55,22 +61,59 @@ export class GeneratorService {
     tableName: string,
     fields: FieldDto[],
   ) {
-    const content = `import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+    // Séparer les champs normaux des relations
+    const normalFields = fields.filter(f => !isRelationType(f.type));
+    const relationFields = fields.filter(f => isRelationType(f.type));
 
-@Entity('${tableName}')
-export class ${entityName} {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+    // Construire les imports TypeORM nécessaires
+    const typeOrmImports = ['Entity', 'PrimaryGeneratedColumn', 'Column', 'CreateDateColumn', 'UpdateDateColumn'];
 
-${fields.map((field) => this.generateFieldColumn(field)).join('\n\n')}
+    // Ajouter les imports de relations si nécessaire
+    const relationTypes = new Set<string>();
+    relationFields.forEach(f => {
+      if (f.type === FieldType.MANY_TO_ONE) {
+        relationTypes.add('ManyToOne');
+        relationTypes.add('JoinColumn');
+      } else if (f.type === FieldType.ONE_TO_MANY) {
+        relationTypes.add('OneToMany');
+      } else if (f.type === FieldType.MANY_TO_MANY) {
+        relationTypes.add('ManyToMany');
+        relationTypes.add('JoinTable');
+      } else if (f.type === FieldType.ONE_TO_ONE) {
+        relationTypes.add('OneToOne');
+        relationTypes.add('JoinColumn');
+      }
+    });
 
-  @CreateDateColumn()
-  createdAt: Date;
+    typeOrmImports.push(...relationTypes);
 
-  @UpdateDateColumn()
-  updatedAt: Date;
-}
-`;
+    // Construire les imports d'entités liées
+    const relatedEntitiesImports = relationFields
+      .filter(f => f.relationTarget)
+      .map(f => {
+        const targetModule = f.relationTarget!.toLowerCase();
+        return `import { ${f.relationTarget} } from '../${targetModule}/${targetModule}.entity';`;
+      })
+      .filter((value, index, self) => self.indexOf(value) === index) // Remove duplicates
+      .join('\n');
+
+    const content = `import { ${typeOrmImports.join(', ')} } from 'typeorm';
+    ${relatedEntitiesImports ? relatedEntitiesImports + '\n' : ''}
+    @Entity('${tableName}')
+    export class ${entityName} {
+      @PrimaryGeneratedColumn('uuid')
+      id: string;
+
+    ${normalFields.map((field) => this.generateFieldColumn(field)).join('\n\n')}
+    ${relationFields.length > 0 ? '\n' + relationFields.map((field) => this.generateRelationField(field, entityName)).join('\n\n') : ''}
+        
+      @CreateDateColumn()
+      createdAt: Date;
+        
+      @UpdateDateColumn()
+      updatedAt: Date;
+    }
+    `;
 
     fs.writeFileSync(
       path.join(modulePath, `${entityName.toLowerCase()}.entity.ts`),
@@ -93,6 +136,37 @@ ${fields.map((field) => this.generateFieldColumn(field)).join('\n\n')}
   ${field.name}: ${this.getTypeScriptType(field.type)};`;
   }
 
+  private generateRelationField(field: FieldDto, currentEntityName: string): string {
+    const target = field.relationTarget || 'Entity';
+    const inverse = field.relationInverse || currentEntityName.toLowerCase() + 's';
+    const onDelete = field.onDelete || 'SET NULL';
+    const eager = field.eager ? ', { eager: true }' : '';
+
+    switch (field.type) {
+      case FieldType.MANY_TO_ONE:
+        return `  @ManyToOne(() => ${target}, ${target.toLowerCase()} => ${target.toLowerCase()}.${inverse}${field.onDelete ? `, { onDelete: '${onDelete}' }` : ''})
+  @JoinColumn({ name: '${field.name}_id' })
+  ${field.name}: ${target};`;
+
+      case FieldType.ONE_TO_MANY:
+        return `  @OneToMany(() => ${target}, ${target.toLowerCase()} => ${target.toLowerCase()}.${field.relationInverse || currentEntityName.toLowerCase()}${eager})
+  ${field.name}: ${target}[];`;
+
+      case FieldType.MANY_TO_MANY:
+        return `  @ManyToMany(() => ${target}${eager})
+  @JoinTable({ name: '${currentEntityName.toLowerCase()}_${field.name}' })
+  ${field.name}: ${target}[];`;
+
+      case FieldType.ONE_TO_ONE:
+        return `  @OneToOne(() => ${target}${field.onDelete ? `, { onDelete: '${onDelete}' }` : ''})
+  @JoinColumn({ name: '${field.name}_id' })
+  ${field.name}: ${target};`;
+
+      default:
+        return '';
+    }
+  }
+
   private async generateDtoFiles(
     modulePath: string,
     entityName: string,
@@ -100,16 +174,28 @@ ${fields.map((field) => this.generateFieldColumn(field)).join('\n\n')}
   ) {
     const moduleName = entityName.toLowerCase();
 
+    // Séparer les champs normaux des relations
+    const normalFields = fields.filter(f => !isRelationType(f.type));
+    const relationFields = fields.filter(f => isRelationType(f.type));
+
     // Create DTO
-    const hasDateField = fields.some((field) => field.type === FieldType.DATE);
-    const transformImport = hasDateField
+    const hasDateField = normalFields.some((field) => field.type === FieldType.DATE);
+    const hasRelations = relationFields.length > 0;
+
+    const transformImport = hasDateField || hasRelations
       ? "import { Type } from 'class-transformer';\n"
       : '';
 
-    const createDtoContent = `import { IsString, IsNumber, IsBoolean, IsDate, IsEmail, IsOptional } from 'class-validator';
+    const validatorImports = ['IsString', 'IsNumber', 'IsBoolean', 'IsDate', 'IsEmail', 'IsOptional'];
+    if (hasRelations) {
+      validatorImports.push('IsUUID', 'IsArray');
+    }
+
+    const createDtoContent = `import { ${validatorImports.join(', ')} } from 'class-validator';
 ${transformImport}
 export class Create${entityName}Dto {
-${fields.map((field) => this.generateDtoField(field, false)).join('\n')}
+${normalFields.map((field) => this.generateDtoField(field, false)).join('\n')}
+${relationFields.length > 0 ? '\n' + relationFields.map((field) => this.generateRelationDtoField(field)).join('\n') : ''}
 }
 `;
 
@@ -140,11 +226,36 @@ export class Update${entityName}Dto extends PartialType(Create${entityName}Dto) 
   ${field.name}: ${this.getTypeScriptType(field.type)};`;
   }
 
+  private generateRelationDtoField(field: FieldDto): string {
+    const optional = !field.required ? '  @IsOptional()\n' : '';
+
+    // Pour ManyToOne et OneToOne, on attend un ID (UUID)
+    if (field.type === FieldType.MANY_TO_ONE || field.type === FieldType.ONE_TO_ONE) {
+      return `${optional}  @IsUUID()
+  ${field.name}Id?: string;`;
+    }
+
+    // Pour OneToMany et ManyToMany, on attend un tableau d'IDs
+    if (field.type === FieldType.ONE_TO_MANY || field.type === FieldType.MANY_TO_MANY) {
+      return `${optional}  @IsArray()
+  @IsUUID('4', { each: true })
+  ${field.name}Ids?: string[];`;
+    }
+
+    return '';
+  }
+
   private async generateServiceFile(
     modulePath: string,
     entityName: string,
     moduleName: string,
+    fields?: FieldDto[],
   ) {
+    // Extraire les noms des relations pour le chargement automatique
+    const relationFields = fields?.filter(f => isRelationType(f.type)) || [];
+    const relationNames = relationFields.map(f => `'${f.name}'`).join(', ');
+    const hasRelations = relationFields.length > 0;
+
     const content = `import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -165,11 +276,13 @@ export class ${entityName}Service {
   }
 
   async findAll(): Promise<${entityName}[]> {
-    return this.${moduleName}Repository.find();
+    return this.${moduleName}Repository.find(${hasRelations ? `{ relations: [${relationNames}] }` : ''});
   }
 
   async findOne(id: string): Promise<${entityName}> {
-    const ${moduleName} = await this.${moduleName}Repository.findOne({ where: { id } });
+    const ${moduleName} = await this.${moduleName}Repository.findOne({
+      where: { id },${hasRelations ? `\n      relations: [${relationNames}],` : ''}
+    });
     if (!${moduleName}) {
       throw new NotFoundException(\`${entityName} with ID \${id} not found\`);
     }
@@ -313,6 +426,146 @@ export class ${entityName}Module {}
     return str.charAt(0).toUpperCase() + str.slice(1);
   }
 
+  /**
+   * Ajoute les relations inverses sur les entités cibles
+   */
+  private async addInverseRelationsToTargetEntities(
+    sourceEntityName: string,
+    fields: FieldDto[],
+  ): Promise<void> {
+    const relationFields = fields.filter(f => isRelationType(f.type) && f.relationTarget);
+
+    for (const field of relationFields) {
+      const targetEntityName = field.relationTarget!;
+      const targetModuleName = targetEntityName.toLowerCase();
+      const targetEntityPath = path.join(this.srcPath, targetModuleName, `${targetModuleName}.entity.ts`);
+
+      if (!fs.existsSync(targetEntityPath)) {
+        console.warn(`Target entity ${targetEntityName} not found, skipping inverse relation`);
+        continue;
+      }
+
+      let targetContent = fs.readFileSync(targetEntityPath, 'utf-8');
+
+      // Vérifier si la relation inverse existe déjà
+      const inversePropertyName = field.relationInverse || sourceEntityName.toLowerCase() + 's';
+      if (targetContent.includes(`${inversePropertyName}:`)) {
+        console.log(`Inverse relation ${inversePropertyName} already exists in ${targetEntityName}`);
+        continue;
+      }
+
+      // Déterminer le type de relation inverse
+      const inverseRelation = this.getInverseRelationCode(
+        field,
+        sourceEntityName,
+        targetEntityName,
+        inversePropertyName,
+      );
+
+      if (!inverseRelation) continue;
+
+      // Ajouter l'import de l'entité source si nécessaire
+      const sourceImport = `import { ${sourceEntityName} } from '../${sourceEntityName.toLowerCase()}/${sourceEntityName.toLowerCase()}.entity';`;
+      if (!targetContent.includes(sourceImport)) {
+        // Ajouter après les imports existants
+        const lastImportMatch = targetContent.match(/import .* from .*;\n/g);
+        if (lastImportMatch) {
+          const lastImport = lastImportMatch[lastImportMatch.length - 1];
+          targetContent = targetContent.replace(lastImport, lastImport + sourceImport + '\n');
+        }
+      }
+
+      // Ajouter les imports TypeORM nécessaires pour la relation inverse
+      targetContent = this.addTypeOrmImportIfNeeded(targetContent, inverseRelation.typeOrmImport);
+
+      // Ajouter la relation inverse avant @CreateDateColumn ou à la fin de la classe
+      const createDateMatch = targetContent.match(/(\s*)@CreateDateColumn\(\)/);
+      if (createDateMatch) {
+        targetContent = targetContent.replace(
+          createDateMatch[0],
+          `${inverseRelation.code}\n\n${createDateMatch[0]}`,
+        );
+      } else {
+        // Ajouter avant la dernière accolade fermante
+        const lastBraceIndex = targetContent.lastIndexOf('}');
+        targetContent = targetContent.slice(0, lastBraceIndex) +
+          `${inverseRelation.code}\n` +
+          targetContent.slice(lastBraceIndex);
+      }
+
+      fs.writeFileSync(targetEntityPath, targetContent);
+      console.log(`Added inverse relation ${inversePropertyName} to ${targetEntityName}`);
+    }
+  }
+
+  private getInverseRelationCode(
+    field: FieldDto,
+    sourceEntityName: string,
+    targetEntityName: string,
+    inversePropertyName: string,
+  ): { code: string; typeOrmImport: string } | null {
+    const sourceVar = sourceEntityName.toLowerCase();
+    const fieldName = field.name;
+
+    switch (field.type) {
+      case FieldType.MANY_TO_ONE:
+        // ManyToOne inverse = OneToMany
+        return {
+          code: `  @OneToMany(() => ${sourceEntityName}, ${sourceVar} => ${sourceVar}.${fieldName})
+  ${inversePropertyName}: ${sourceEntityName}[];`,
+          typeOrmImport: 'OneToMany',
+        };
+
+      case FieldType.ONE_TO_MANY:
+        // OneToMany inverse = ManyToOne
+        return {
+          code: `  @ManyToOne(() => ${sourceEntityName}, ${sourceVar} => ${sourceVar}.${fieldName})
+  @JoinColumn({ name: '${inversePropertyName}_id' })
+  ${inversePropertyName}: ${sourceEntityName};`,
+          typeOrmImport: 'ManyToOne',
+        };
+
+      case FieldType.MANY_TO_MANY:
+        // ManyToMany inverse = ManyToMany (sans JoinTable)
+        return {
+          code: `  @ManyToMany(() => ${sourceEntityName}, ${sourceVar} => ${sourceVar}.${fieldName})
+  ${inversePropertyName}: ${sourceEntityName}[];`,
+          typeOrmImport: 'ManyToMany',
+        };
+
+      case FieldType.ONE_TO_ONE:
+        // OneToOne inverse = OneToOne (sans JoinColumn)
+        return {
+          code: `  @OneToOne(() => ${sourceEntityName}, ${sourceVar} => ${sourceVar}.${fieldName})
+  ${inversePropertyName}: ${sourceEntityName};`,
+          typeOrmImport: 'OneToOne',
+        };
+
+      default:
+        return null;
+    }
+  }
+
+  private addTypeOrmImportIfNeeded(content: string, importName: string): string {
+    // Trouver la ligne d'import typeorm
+    const typeOrmImportMatch = content.match(/import \{ ([^}]+) \} from 'typeorm';/);
+
+    if (typeOrmImportMatch) {
+      const currentImports = typeOrmImportMatch[1];
+
+      // Vérifier si l'import existe déjà
+      if (currentImports.includes(importName)) {
+        return content;
+      }
+
+      // Ajouter l'import
+      const newImports = currentImports + ', ' + importName;
+      return content.replace(typeOrmImportMatch[0], `import { ${newImports} } from 'typeorm';`);
+    }
+
+    return content;
+  }
+
   private async updateAppModule(
     entityName: string,
     moduleName: string,
@@ -420,19 +673,23 @@ export class ${entityName}Module {}
 
   private parseEntityFields(entityContent: string): any[] {
     const fields: Array<{
-      name: any;
+      name: string;
       type: string;
       required: boolean;
       unique: boolean;
-      defaultValue: any;
+      defaultValue?: string;
+      relationTarget?: string;
+      relationInverse?: string;
+      onDelete?: string;
     }> = [];
+
+    // Parse les colonnes normales
     const columnRegex = /@Column\((.*?)\)\s+(\w+):\s*(\w+);/gs;
     let match;
 
     while ((match = columnRegex.exec(entityContent)) !== null) {
       const options = match[1];
       const fieldName = match[2];
-      const fieldTypeTs = match[3];
 
       // Parse options
       const typeMatch = options.match(/type:\s*'(\w+)'/);
@@ -448,6 +705,58 @@ export class ${entityName}Module {}
         required: !(nullableMatch && nullableMatch[1] === 'true'),
         unique: uniqueMatch ? uniqueMatch[1] === 'true' : false,
         defaultValue: defaultMatch ? defaultMatch[1] : undefined,
+      });
+    }
+
+    // Parse les relations ManyToOne
+    const manyToOneRegex = /@ManyToOne\(\(\)\s*=>\s*(\w+),\s*\w+\s*=>\s*\w+\.(\w+)(?:,\s*\{[^}]*onDelete:\s*'(\w+)'[^}]*\})?\)[\s\S]*?@JoinColumn\([^)]*\)\s+(\w+):\s*\w+;/g;
+    while ((match = manyToOneRegex.exec(entityContent)) !== null) {
+      fields.push({
+        name: match[4],
+        type: 'many-to-one',
+        required: true,
+        unique: false,
+        relationTarget: match[1],
+        relationInverse: match[2],
+        onDelete: match[3],
+      });
+    }
+
+    // Parse les relations OneToMany
+    const oneToManyRegex = /@OneToMany\(\(\)\s*=>\s*(\w+),\s*\w+\s*=>\s*\w+\.(\w+)[^)]*\)\s+(\w+):\s*\w+\[\];/g;
+    while ((match = oneToManyRegex.exec(entityContent)) !== null) {
+      fields.push({
+        name: match[3],
+        type: 'one-to-many',
+        required: false,
+        unique: false,
+        relationTarget: match[1],
+        relationInverse: match[2],
+      });
+    }
+
+    // Parse les relations ManyToMany
+    const manyToManyRegex = /@ManyToMany\(\(\)\s*=>\s*(\w+)[^)]*\)[\s\S]*?@JoinTable\([^)]*\)\s+(\w+):\s*\w+\[\];/g;
+    while ((match = manyToManyRegex.exec(entityContent)) !== null) {
+      fields.push({
+        name: match[2],
+        type: 'many-to-many',
+        required: false,
+        unique: false,
+        relationTarget: match[1],
+      });
+    }
+
+    // Parse les relations OneToOne
+    const oneToOneRegex = /@OneToOne\(\(\)\s*=>\s*(\w+)(?:,\s*\{[^}]*onDelete:\s*'(\w+)'[^}]*\})?\)[\s\S]*?@JoinColumn\([^)]*\)\s+(\w+):\s*\w+;/g;
+    while ((match = oneToOneRegex.exec(entityContent)) !== null) {
+      fields.push({
+        name: match[3],
+        type: 'one-to-one',
+        required: true,
+        unique: false,
+        relationTarget: match[1],
+        onDelete: match[2],
       });
     }
 
@@ -471,19 +780,206 @@ export class ${entityName}Module {}
   }
 
   async updateEntity(name: string, updateEntityDto: CreateEntityDto) {
-    // Supprimer l'ancienne entité
-    await this.deleteEntity(name, false);
+    const moduleName = name.toLowerCase();
+
+    // Récupérer les anciennes relations avant suppression
+    const oldSchema = await this.getEntitySchema(name);
+    const oldRelations = oldSchema.fields.filter(f => isRelationType(f.type as FieldType));
+
+    // Supprimer l'ancienne entité (sans supprimer la table en base pour conserver les données)
+    await this.deleteEntity(name, false, false);
 
     // Recréer avec les nouvelles données
-    return this.generateEntity(updateEntityDto);
+    const result = await this.generateEntity(updateEntityDto);
+
+    // Nettoyer les relations inverses orphelines
+    const newRelations = updateEntityDto.fields.filter(f => isRelationType(f.type));
+    await this.cleanupOrphanedInverseRelations(name, oldRelations, newRelations);
+
+    // Supprimer les tables de jonction ManyToMany qui n'existent plus
+    await this.cleanupOrphanedJunctionTables(moduleName, oldRelations, newRelations);
+
+    return result;
   }
 
-  async deleteEntity(name: string, removeFromAppModule: boolean = true) {
+  /**
+   * Supprime les tables de jonction ManyToMany qui n'existent plus après une mise à jour
+   */
+  private async cleanupOrphanedJunctionTables(
+    moduleName: string,
+    oldRelations: any[],
+    newRelations: FieldDto[],
+  ): Promise<void> {
+    const oldManyToMany = oldRelations.filter(r => r.type === 'many-to-many');
+    const newManyToMany = newRelations.filter(r => r.type === FieldType.MANY_TO_MANY);
+
+    for (const oldRel of oldManyToMany) {
+      // Vérifier si cette relation ManyToMany existe encore
+      const stillExists = newManyToMany.some(
+        newRel => newRel.name === oldRel.name && newRel.relationTarget === oldRel.relationTarget
+      );
+
+      if (!stillExists) {
+        // Cette relation ManyToMany a été supprimée, supprimer la table de jonction
+        const junctionTableName = `${moduleName}_${oldRel.name}`;
+        await this.dropJunctionTable(junctionTableName);
+      }
+    }
+  }
+
+  /**
+   * Supprime une table de jonction de la base de données
+   */
+  private async dropJunctionTable(tableName: string): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+
+    try {
+      await queryRunner.connect();
+      await queryRunner.query(`DROP TABLE IF EXISTS "${tableName}" CASCADE`);
+      console.log(`Dropped junction table: ${tableName}`);
+    } catch (e) {
+      console.warn(`Failed to drop junction table ${tableName}: ${e.message}`);
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /**
+   * Supprime les relations inverses qui n'existent plus après une mise à jour
+   */
+  private async cleanupOrphanedInverseRelations(
+    sourceEntityName: string,
+    oldRelations: any[],
+    newRelations: FieldDto[],
+  ): Promise<void> {
+    for (const oldRel of oldRelations) {
+      // Vérifier si cette relation existe encore dans les nouvelles relations
+      const stillExists = newRelations.some(
+        newRel =>
+          newRel.name === oldRel.name &&
+          newRel.relationTarget === oldRel.relationTarget
+      );
+
+      if (!stillExists && oldRel.relationTarget) {
+        // Cette relation a été supprimée, nettoyer la relation inverse
+        await this.removeInverseRelationFromTargetEntity(
+          sourceEntityName,
+          oldRel.relationTarget,
+          oldRel.relationInverse || sourceEntityName.toLowerCase() + 's',
+        );
+      }
+    }
+  }
+
+  /**
+   * Supprime une relation inverse d'une entité cible
+   */
+  private async removeInverseRelationFromTargetEntity(
+    sourceEntityName: string,
+    targetEntityName: string,
+    inversePropertyName: string,
+  ): Promise<void> {
+    const targetModuleName = targetEntityName.toLowerCase();
+    const targetEntityPath = path.join(this.srcPath, targetModuleName, `${targetModuleName}.entity.ts`);
+
+    if (!fs.existsSync(targetEntityPath)) {
+      return;
+    }
+
+    let content = fs.readFileSync(targetEntityPath, 'utf-8');
+
+    // Supprimer l'import de l'entité source si elle n'est plus utilisée ailleurs
+    const sourceImport = `import { ${sourceEntityName} } from '../${sourceEntityName.toLowerCase()}/${sourceEntityName.toLowerCase()}.entity';\n`;
+
+    // Patterns pour trouver et supprimer la relation inverse
+    // Pattern pour @ManyToMany, @OneToMany, @ManyToOne, @OneToOne
+    const relationPatterns = [
+      // ManyToMany sans JoinTable (relation inverse)
+      new RegExp(`\\s*@ManyToMany\\(\\(\\)\\s*=>\\s*${sourceEntityName}[^)]*\\)\\s*\\n?\\s*${inversePropertyName}:\\s*${sourceEntityName}\\[\\];`, 'g'),
+      // OneToMany
+      new RegExp(`\\s*@OneToMany\\(\\(\\)\\s*=>\\s*${sourceEntityName}[^)]*\\)\\s*\\n?\\s*${inversePropertyName}:\\s*${sourceEntityName}\\[\\];`, 'g'),
+      // ManyToOne avec JoinColumn
+      new RegExp(`\\s*@ManyToOne\\(\\(\\)\\s*=>\\s*${sourceEntityName}[^)]*\\)\\s*\\n?\\s*@JoinColumn\\([^)]*\\)\\s*\\n?\\s*${inversePropertyName}:\\s*${sourceEntityName};`, 'g'),
+      // OneToOne sans JoinColumn (relation inverse)
+      new RegExp(`\\s*@OneToOne\\(\\(\\)\\s*=>\\s*${sourceEntityName}[^)]*\\)\\s*\\n?\\s*${inversePropertyName}:\\s*${sourceEntityName};`, 'g'),
+    ];
+
+    let modified = false;
+    for (const pattern of relationPatterns) {
+      if (pattern.test(content)) {
+        content = content.replace(pattern, '');
+        modified = true;
+        break;
+      }
+    }
+
+    if (modified) {
+      // Vérifier si l'entité source est encore utilisée ailleurs dans le fichier
+      const sourceEntityUsage = new RegExp(`${sourceEntityName}(?![a-zA-Z])`, 'g');
+      const matches = content.match(sourceEntityUsage);
+
+      // Si seulement l'import reste (1 match), supprimer l'import
+      if (!matches || matches.length <= 1) {
+        content = content.replace(sourceImport, '');
+
+        // Nettoyer les imports TypeORM inutilisés
+        content = this.cleanupUnusedTypeOrmImports(content);
+      }
+
+      fs.writeFileSync(targetEntityPath, content);
+      console.log(`Removed inverse relation ${inversePropertyName} from ${targetEntityName}`);
+    }
+  }
+
+  /**
+   * Nettoie les imports TypeORM qui ne sont plus utilisés
+   */
+  private cleanupUnusedTypeOrmImports(content: string): string {
+    const typeOrmImportMatch = content.match(/import \{ ([^}]+) \} from 'typeorm';/);
+    if (!typeOrmImportMatch) return content;
+
+    const imports = typeOrmImportMatch[1].split(',').map(i => i.trim());
+    const usedImports = imports.filter(imp => {
+      // Vérifier si l'import est utilisé ailleurs dans le fichier (pas dans la ligne d'import)
+      const restOfContent = content.replace(typeOrmImportMatch[0], '');
+      return restOfContent.includes(`@${imp}`) || restOfContent.includes(imp + '(');
+    });
+
+    if (usedImports.length === 0) {
+      return content.replace(typeOrmImportMatch[0] + '\n', '');
+    }
+
+    if (usedImports.length < imports.length) {
+      return content.replace(
+        typeOrmImportMatch[0],
+        `import { ${usedImports.join(', ')} } from 'typeorm';`
+      );
+    }
+
+    return content;
+  }
+
+  async deleteEntity(name: string, removeFromAppModule: boolean = true, dropTable: boolean = true) {
     const moduleName = name.toLowerCase();
     const entityPath = path.join(this.srcPath, moduleName);
 
     if (!fs.existsSync(entityPath)) {
       throw new Error(`Entity ${name} not found`);
+    }
+
+    // Récupérer le nom de la table et les relations avant de supprimer les fichiers
+    let tableName: string | null = null;
+    let relationTables: string[] = [];
+
+    try {
+      const schema = await this.getEntitySchema(name);
+      tableName = schema.tableName;
+
+      // Récupérer les tables de jonction ManyToMany
+      const manyToManyRelations = schema.fields.filter(f => f.type === 'many-to-many');
+      relationTables = manyToManyRelations.map(rel => `${moduleName}_${rel.name}`);
+    } catch (e) {
+      console.warn(`Could not get entity schema: ${e.message}`);
     }
 
     // Supprimer le dossier de l'entité
@@ -494,9 +990,45 @@ export class ${entityName}Module {}
       await this.removeFromAppModule(this.capitalize(name), moduleName);
     }
 
+    // Supprimer la table et les tables de jonction en base
+    if (dropTable && tableName) {
+      await this.dropTableFromDatabase(tableName, relationTables);
+    }
+
     return {
       message: `Entity ${name} deleted successfully`,
     };
+  }
+
+  /**
+   * Supprime une table et ses tables de jonction de la base de données
+   */
+  private async dropTableFromDatabase(tableName: string, relationTables: string[]): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+
+    try {
+      await queryRunner.connect();
+
+      // Supprimer d'abord les tables de jonction (pour éviter les contraintes FK)
+      for (const relationTable of relationTables) {
+        try {
+          await queryRunner.query(`DROP TABLE IF EXISTS "${relationTable}" CASCADE`);
+          console.log(`Dropped junction table: ${relationTable}`);
+        } catch (e) {
+          console.warn(`Failed to drop junction table ${relationTable}: ${e.message}`);
+        }
+      }
+
+      // Supprimer la table principale
+      try {
+        await queryRunner.query(`DROP TABLE IF EXISTS "${tableName}" CASCADE`);
+        console.log(`Dropped table: ${tableName}`);
+      } catch (e) {
+        console.warn(`Failed to drop table ${tableName}: ${e.message}`);
+      }
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   private async removeFromAppModule(

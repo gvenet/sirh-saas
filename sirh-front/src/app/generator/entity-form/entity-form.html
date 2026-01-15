@@ -1,21 +1,36 @@
-<div class="page-wrapper">
-  <nav class="page-nav">
-    <div class="nav-content">
-      <div class="nav-left">
-        <a routerLink="/dashboard" class="nav-back">
+<div class="admin-wrapper">
+  <!-- Navbar Administration réutilisable -->
+  <app-admin-navbar></app-admin-navbar>
+
+  <!-- Sous-navbar pour la page -->
+  <nav class="page-subnav">
+    <div class="subnav-content">
+      <div class="subnav-left">
+        <a routerLink="/generator/list" class="subnav-back">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
             <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
           </svg>
-          Dashboard
+          Retour
         </a>
-        <h1>{{ isEditMode ? 'Edit Entity' : 'New Entity' }}</h1>
+        <div class="subnav-title">
+          @if (isEditMode) {
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+            </svg>
+          } @else {
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+            </svg>
+          }
+          <span>{{ isEditMode ? 'Modifier l\'Entité' : 'Nouvelle Entité' }}</span>
+        </div>
       </div>
-      <div class="nav-right">
-        <a routerLink="/generator/list" class="nav-link">
+      <div class="subnav-right">
+        <a routerLink="/generator/list" class="btn-list">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
             <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/>
           </svg>
-          All Entities
+          Toutes les Entités
         </a>
       </div>
     </div>
@@ -51,6 +66,9 @@
         @if (entityForm.get('name')?.invalid && entityForm.get('name')?.touched) {
           <small class="error-text">Entity name must start with uppercase letter</small>
         }
+        @if (isEditMode) {
+          <small class="hint-text">Le nom de l'entité ne peut pas être modifié</small>
+        }
       </div>
 
       <div class="form-group">
@@ -65,77 +83,144 @@
         @if (entityForm.get('tableName')?.invalid && entityForm.get('tableName')?.touched) {
           <small class="error-text">Table name must be in snake_case</small>
         }
+        @if (isEditMode) {
+          <small class="hint-text">Le nom de la table ne peut pas être modifié</small>
+        }
       </div>
     </div>
 
     <div class="form-section">
       <div class="section-header">
-        <h3>Fields</h3>
-        <button type="button" class="btn btn-secondary" (click)="addField()">
-          Add Field
-        </button>
+        <h3>Champs</h3>
+        <div class="header-buttons">
+          <button type="button" class="btn btn-secondary" (click)="addField()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+            </svg>
+            Ajouter Champ
+          </button>
+          <button type="button" class="btn btn-relation" (click)="addRelation()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+              <path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/>
+            </svg>
+            Ajouter Relation
+          </button>
+        </div>
       </div>
 
       @if (fields.length === 0) {
-        <p class="no-fields">No fields added yet. Click "Add Field" to start.</p>
+        <p class="no-fields">Aucun champ ajouté. Cliquez sur "Ajouter Champ" ou "Ajouter Relation" pour commencer.</p>
       }
 
-      <div formArrayName="fields" class="fields-table">
-        @if (fields.length > 0) {
-          <div class="table-header">
-            <div class="col-name">Name</div>
-            <div class="col-type">Type</div>
-            <div class="col-options">Options</div>
-            <div class="col-default">Default</div>
-            <div class="col-actions"></div>
-          </div>
-        }
-
+      <div formArrayName="fields" class="fields-list">
         @for (field of fields.controls; track $index) {
-          <div [formGroupName]="$index" class="field-row">
-            <div class="col-name">
-              <input
-                type="text"
-                formControlName="name"
-                placeholder="fieldName"
-                class="form-control-compact"
-              />
-            </div>
-
-            <div class="col-type">
-              <select formControlName="type" class="form-control-compact">
-                @for (type of fieldTypes; track type) {
-                  <option [value]="type">{{ type }}</option>
-                }
-              </select>
-            </div>
-
-            <div class="col-options">
-              <label class="checkbox-inline">
-                <input type="checkbox" formControlName="required" />
-                <span>Required</span>
-              </label>
-              <label class="checkbox-inline">
-                <input type="checkbox" formControlName="unique" />
-                <span>Unique</span>
-              </label>
-            </div>
-
-            <div class="col-default">
-              <input
-                type="text"
-                formControlName="defaultValue"
-                placeholder="Optional"
-                class="form-control-compact"
-              />
-            </div>
-
-            <div class="col-actions">
-              <button type="button" class="btn-icon-remove" (click)="removeField($index)" title="Remove field">
+          <div [formGroupName]="$index" class="field-card" [class.relation-card]="isRelationField(field.get('type')?.value)">
+            <div class="field-card-header">
+              <span class="field-number">#{{ $index + 1 }}</span>
+              @if (isRelationField(field.get('type')?.value)) {
+                <span class="field-badge relation-badge">Relation</span>
+              } @else {
+                <span class="field-badge field-type-badge">Champ</span>
+              }
+              <button type="button" class="btn-icon-remove" (click)="removeField($index)" title="Supprimer">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                 </svg>
               </button>
+            </div>
+
+            <div class="field-card-body">
+              <div class="field-row-grid">
+                <div class="form-group-inline">
+                  <label>Nom</label>
+                  <input
+                    type="text"
+                    formControlName="name"
+                    placeholder="nomDuChamp"
+                    class="form-control-compact"
+                  />
+                </div>
+
+                <div class="form-group-inline">
+                  <label>Type</label>
+                  <select formControlName="type" class="form-control-compact">
+                    <optgroup label="Types de base">
+                      @for (type of basicFieldTypes; track type) {
+                        <option [value]="type">{{ type }}</option>
+                      }
+                    </optgroup>
+                    <optgroup label="Relations">
+                      @for (type of relationTypes; track type) {
+                        <option [value]="type">{{ type }}</option>
+                      }
+                    </optgroup>
+                  </select>
+                </div>
+
+                @if (!isRelationField(field.get('type')?.value)) {
+                  <!-- Options pour les champs normaux -->
+                  <div class="form-group-inline">
+                    <label>Valeur par défaut</label>
+                    <input
+                      type="text"
+                      formControlName="defaultValue"
+                      placeholder="Optionnel"
+                      class="form-control-compact"
+                    />
+                  </div>
+
+                  <div class="form-group-inline options-group">
+                    <label class="checkbox-inline">
+                      <input type="checkbox" formControlName="required" />
+                      <span>Requis</span>
+                    </label>
+                    <label class="checkbox-inline">
+                      <input type="checkbox" formControlName="unique" />
+                      <span>Unique</span>
+                    </label>
+                  </div>
+                } @else {
+                  <!-- Options pour les relations -->
+                  <div class="form-group-inline">
+                    <label>Entité cible</label>
+                    <select formControlName="relationTarget" class="form-control-compact">
+                      <option value="">-- Sélectionner --</option>
+                      @for (entity of availableEntities; track entity.name) {
+                        <option [value]="entity.name">{{ entity.name }}</option>
+                      }
+                    </select>
+                  </div>
+
+                  <div class="form-group-inline">
+                    <label>Propriété inverse</label>
+                    <input
+                      type="text"
+                      formControlName="relationInverse"
+                      placeholder="ex: posts, author..."
+                      class="form-control-compact"
+                    />
+                  </div>
+
+                  @if (field.get('type')?.value === 'many-to-one' || field.get('type')?.value === 'one-to-one') {
+                    <div class="form-group-inline">
+                      <label>On Delete</label>
+                      <select formControlName="onDelete" class="form-control-compact">
+                        <option value="SET NULL">SET NULL</option>
+                        <option value="CASCADE">CASCADE</option>
+                        <option value="RESTRICT">RESTRICT</option>
+                        <option value="NO ACTION">NO ACTION</option>
+                      </select>
+                    </div>
+                  }
+
+                  <div class="form-group-inline options-group">
+                    <label class="checkbox-inline">
+                      <input type="checkbox" formControlName="eager" />
+                      <span>Eager loading</span>
+                    </label>
+                  </div>
+                }
+              </div>
             </div>
           </div>
         }
@@ -158,3 +243,4 @@
   </form>
   </div>
 </div>
+

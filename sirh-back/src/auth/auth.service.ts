@@ -6,6 +6,7 @@ import { LoginDto } from './dto/login.dto';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { User } from '../users/entities/user.entity';
 import * as crypto from 'crypto';
@@ -137,5 +138,26 @@ export class AuthService {
   private sanitizeUser(user: User) {
     const { password, resetPasswordToken, ...result } = user;
     return result;
+  }
+
+  async changePassword(userId: string, changePasswordDto: ChangePasswordDto): Promise<{ message: string }> {
+    const user = await this.usersService.findById(userId);
+
+    if (!user) {
+      throw new BadRequestException('Utilisateur non trouvé');
+    }
+
+    const isPasswordValid = await this.usersService.validatePassword(
+      changePasswordDto.currentPassword,
+      user.password,
+    );
+
+    if (!isPasswordValid) {
+      throw new BadRequestException('Mot de passe actuel incorrect');
+    }
+
+    await this.usersService.updatePassword(userId, changePasswordDto.newPassword);
+
+    return { message: 'Mot de passe modifié avec succès' };
   }
 }
