@@ -6,8 +6,6 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { GeneratorModule } from './generator/generator.module';
-import { EmployeeModule } from './employee/employee.module';
-import { SkillModule } from './skill/skill.module';
 import { ApplicationModule } from './application/application.module';
 import { EntityPageModule } from './entity-page/entity-page.module';
 
@@ -18,7 +16,7 @@ import { EntityPageModule } from './entity-page/entity-page.module';
       envFilePath: '.env',
     }),
     TypeOrmModule.forRootAsync({
-imports: [ConfigModule, EmployeeModule, SkillModule,
+imports: [ConfigModule,
 ],
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
