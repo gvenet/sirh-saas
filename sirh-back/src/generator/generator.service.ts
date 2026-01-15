@@ -105,7 +105,7 @@ export class GeneratorService {
       id: string;
 
     ${normalFields.map((field) => this.generateFieldColumn(field)).join('\n\n')}
-    ${relationFields.length > 0 ? '\n' + relationFields.map((field) => this.generateRelationField(field, entityName)).join('\n\n') : ''}
+    ${relationFields.length > 0 ? '\n' + relationFields.map((field) => this.generateRelationField(field, entityName, tableName)).join('\n\n') : ''}
         
       @CreateDateColumn()
       createdAt: Date;
@@ -136,11 +136,13 @@ export class GeneratorService {
   ${field.name}: ${this.getTypeScriptType(field.type)};`;
   }
 
-  private generateRelationField(field: FieldDto, currentEntityName: string): string {
+  private generateRelationField(field: FieldDto, currentEntityName: string, tableName?: string): string {
     const target = field.relationTarget || 'Entity';
     const inverse = field.relationInverse || currentEntityName.toLowerCase() + 's';
     const onDelete = field.onDelete || 'SET NULL';
     const eager = field.eager ? ', { eager: true }' : '';
+    // Utiliser le nom de la table pour la table de jonction (ex: employees_skills)
+    const tablePrefix = tableName || currentEntityName.toLowerCase();
 
     switch (field.type) {
       case FieldType.MANY_TO_ONE:
@@ -154,7 +156,7 @@ export class GeneratorService {
 
       case FieldType.MANY_TO_MANY:
         return `  @ManyToMany(() => ${target}${eager})
-  @JoinTable({ name: '${currentEntityName.toLowerCase()}_${field.name}' })
+  @JoinTable({ name: '${tablePrefix}_${field.name}' })
   ${field.name}: ${target}[];`;
 
       case FieldType.ONE_TO_ONE:
@@ -663,12 +665,149 @@ export class ${entityName}Module {}
     const fields = this.parseEntityFields(entityContent);
     const tableName = this.extractTableName(entityContent);
 
+    // Trouver les relations inverses (entités qui pointent vers celle-ci)
+    const incomingRelations = await this.findIncomingRelations(name);
+
+    // Filtrer les relations entrantes qui sont déjà des relations sortantes
+    // (éviter la duplication pour les relations bidirectionnelles)
+    const outgoingTargets = fields
+      .filter(f => ['many-to-one', 'one-to-many', 'many-to-many', 'one-to-one'].includes(f.type))
+      .map(f => f.relationTarget);
+
+    const filteredIncoming = incomingRelations.filter(
+      rel => !outgoingTargets.includes(rel.sourceEntity)
+    );
+
     return {
       name,
       tableName,
       fields,
       moduleName,
+      incomingRelations: filteredIncoming,
     };
+  }
+
+  /**
+   * Trouve toutes les entités qui ont une relation vers l'entité spécifiée
+   */
+  private async findIncomingRelations(targetEntityName: string): Promise<Array<{
+    sourceEntity: string;
+    fieldName: string;
+    relationType: string;
+    inverseProperty: string;
+  }>> {
+    const incomingRelations: Array<{
+      sourceEntity: string;
+      fieldName: string;
+      relationType: string;
+      inverseProperty: string;
+    }> = [];
+
+    // Lister toutes les entités
+    const entities = await this.listEntities();
+
+    for (const entity of entities) {
+      if (entity.name === targetEntityName) continue;
+
+      const entityFilePath = path.join(entity.path, `${entity.moduleName}.entity.ts`);
+      if (!fs.existsSync(entityFilePath)) continue;
+
+      const content = fs.readFileSync(entityFilePath, 'utf-8');
+
+      // Chercher les relations qui pointent vers targetEntityName
+      // ManyToOne
+      const manyToOneRegex = new RegExp(
+        `@ManyToOne\\(\\(\\)\\s*=>\\s*${targetEntityName}[^)]*\\)[\\s\\S]*?@JoinColumn\\([^)]*\\)\\s+(\\w+):\\s*${targetEntityName};`,
+        'g'
+      );
+      let match;
+      while ((match = manyToOneRegex.exec(content)) !== null) {
+        incomingRelations.push({
+          sourceEntity: entity.name,
+          fieldName: match[1],
+          relationType: 'many-to-one',
+          inverseProperty: this.extractInverseProperty(content, match[1], 'ManyToOne'),
+        });
+      }
+
+      // OneToMany
+      const oneToManyRegex = new RegExp(
+        `@OneToMany\\(\\(\\)\\s*=>\\s*${targetEntityName}[^)]*\\)\\s+(\\w+):\\s*${targetEntityName}\\[\\];`,
+        'g'
+      );
+      while ((match = oneToManyRegex.exec(content)) !== null) {
+        incomingRelations.push({
+          sourceEntity: entity.name,
+          fieldName: match[1],
+          relationType: 'one-to-many',
+          inverseProperty: this.extractInverseProperty(content, match[1], 'OneToMany'),
+        });
+      }
+
+      // ManyToMany - toutes les relations ManyToMany pointant vers targetEntityName
+      // Pattern 1: @ManyToMany(() => Target) suivi de @JoinTable puis fieldName
+      const manyToManyWithJoinTableRegex = new RegExp(
+        `@ManyToMany\\(\\(\\)\\s*=>\\s*${targetEntityName}[^)]*\\)\\s*@JoinTable\\([^)]*\\)\\s*(\\w+):\\s*${targetEntityName}\\[\\];`,
+        'g'
+      );
+      while ((match = manyToManyWithJoinTableRegex.exec(content)) !== null) {
+        incomingRelations.push({
+          sourceEntity: entity.name,
+          fieldName: match[1],
+          relationType: 'many-to-many',
+          inverseProperty: this.extractInverseProperty(content, match[1], 'ManyToMany'),
+        });
+      }
+
+      // Pattern 2: @ManyToMany(() => Target, ...) sans @JoinTable (côté inverse)
+      const manyToManyWithoutJoinTableRegex = new RegExp(
+        `@ManyToMany\\(\\(\\)\\s*=>\\s*${targetEntityName},[^)]*\\)\\s*(\\w+):\\s*${targetEntityName}\\[\\];`,
+        'g'
+      );
+      while ((match = manyToManyWithoutJoinTableRegex.exec(content)) !== null) {
+        incomingRelations.push({
+          sourceEntity: entity.name,
+          fieldName: match[1],
+          relationType: 'many-to-many',
+          inverseProperty: this.extractInverseProperty(content, match[1], 'ManyToMany'),
+        });
+      }
+
+      // OneToOne
+      const oneToOneRegex = new RegExp(
+        `@OneToOne\\(\\(\\)\\s*=>\\s*${targetEntityName}[^)]*\\)[\\s\\S]*?(?:@JoinColumn\\([^)]*\\))?\\s*(\\w+):\\s*${targetEntityName};`,
+        'g'
+      );
+      while ((match = oneToOneRegex.exec(content)) !== null) {
+        incomingRelations.push({
+          sourceEntity: entity.name,
+          fieldName: match[1],
+          relationType: 'one-to-one',
+          inverseProperty: this.extractInverseProperty(content, match[1], 'OneToOne'),
+        });
+      }
+    }
+
+    return incomingRelations;
+  }
+
+  private extractInverseProperty(content: string, fieldName: string, relationType: string): string {
+    // Chercher le pattern: @RelationType(() => Target, target => target.inverseProperty)
+    const regex = new RegExp(
+      `@${relationType}\\(\\(\\)\\s*=>\\s*\\w+,\\s*\\w+\\s*=>\\s*\\w+\\.(\\w+)`,
+      'g'
+    );
+    const matches = [...content.matchAll(regex)];
+    // Trouver celui qui correspond au champ
+    for (const match of matches) {
+      if (content.indexOf(match[0]) < content.indexOf(`${fieldName}:`)) {
+        const nextFieldMatch = content.substring(content.indexOf(match[0])).match(/(\w+):\s*\w+/);
+        if (nextFieldMatch && nextFieldMatch[1] === fieldName) {
+          return match[1];
+        }
+      }
+    }
+    return '';
   }
 
   private parseEntityFields(entityContent: string): any[] {
@@ -780,8 +919,6 @@ export class ${entityName}Module {}
   }
 
   async updateEntity(name: string, updateEntityDto: CreateEntityDto) {
-    const moduleName = name.toLowerCase();
-
     // Récupérer les anciennes relations avant suppression
     const oldSchema = await this.getEntitySchema(name);
     const oldRelations = oldSchema.fields.filter(f => isRelationType(f.type as FieldType));
@@ -797,7 +934,7 @@ export class ${entityName}Module {}
     await this.cleanupOrphanedInverseRelations(name, oldRelations, newRelations);
 
     // Supprimer les tables de jonction ManyToMany qui n'existent plus
-    await this.cleanupOrphanedJunctionTables(moduleName, oldRelations, newRelations);
+    await this.cleanupOrphanedJunctionTables(oldSchema.tableName, oldRelations, newRelations);
 
     return result;
   }
@@ -806,7 +943,7 @@ export class ${entityName}Module {}
    * Supprime les tables de jonction ManyToMany qui n'existent plus après une mise à jour
    */
   private async cleanupOrphanedJunctionTables(
-    moduleName: string,
+    tableName: string,
     oldRelations: any[],
     newRelations: FieldDto[],
   ): Promise<void> {
@@ -821,7 +958,7 @@ export class ${entityName}Module {}
 
       if (!stillExists) {
         // Cette relation ManyToMany a été supprimée, supprimer la table de jonction
-        const junctionTableName = `${moduleName}_${oldRel.name}`;
+        const junctionTableName = `${tableName}_${oldRel.name}`;
         await this.dropJunctionTable(junctionTableName);
       }
     }
@@ -975,9 +1112,9 @@ export class ${entityName}Module {}
       const schema = await this.getEntitySchema(name);
       tableName = schema.tableName;
 
-      // Récupérer les tables de jonction ManyToMany
+      // Récupérer les tables de jonction ManyToMany (utilise tableName, pas moduleName)
       const manyToManyRelations = schema.fields.filter(f => f.type === 'many-to-many');
-      relationTables = manyToManyRelations.map(rel => `${moduleName}_${rel.name}`);
+      relationTables = manyToManyRelations.map(rel => `${schema.tableName}_${rel.name}`);
     } catch (e) {
       console.warn(`Could not get entity schema: ${e.message}`);
     }

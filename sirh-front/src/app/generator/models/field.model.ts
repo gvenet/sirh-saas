@@ -36,10 +36,18 @@ export function isRelationType(type: FieldType): boolean {
   ].includes(type);
 }
 
+export interface IncomingRelation {
+  sourceEntity: string;
+  fieldName: string;
+  relationType: string;
+  inverseProperty: string;
+}
+
 export interface CreateEntityDto {
   name: string;
   tableName: string;
   fields: Field[];
+  incomingRelations?: IncomingRelation[];
 }
 
 export interface GeneratorResponse {

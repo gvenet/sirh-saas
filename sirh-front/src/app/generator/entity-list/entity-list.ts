@@ -76,4 +76,8 @@ export class EntityListComponent implements OnInit {
   trackByName(_index: number, entity: EntityInfo): string {
     return entity.name;
   }
+
+  viewEntity(name: string): void {
+    this.router.navigate(['/generator/view', name]);
+  }
 }

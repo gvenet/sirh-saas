@@ -1,0 +1,213 @@
+<div class="admin-wrapper">
+  <app-admin-navbar></app-admin-navbar>
+
+  <nav class="page-subnav">
+    <div class="subnav-content">
+      <div class="subnav-left">
+        <a routerLink="/generator/list" class="subnav-back">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+          </svg>
+          Retour
+        </a>
+        <div class="subnav-title">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+          </svg>
+          <span>{{ entityName }}</span>
+        </div>
+      </div>
+      <div class="subnav-right">
+        <button class="btn-action btn-edit" (click)="editEntity()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+          </svg>
+          Modifier
+        </button>
+        <button class="btn-action btn-delete" (click)="deleteEntity()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+          </svg>
+          Supprimer
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="entity-view-container">
+    @if (loading) {
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <p>Chargement de l'entité...</p>
+      </div>
+    }
+
+    @if (error) {
+      <div class="alert alert-error">
+        {{ error }}
+      </div>
+    }
+
+    @if (entity && !loading) {
+      <!-- Informations générales -->
+      <div class="info-section">
+        <h3>Informations</h3>
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="info-label">Nom de l'entité</span>
+            <span class="info-value">{{ entity.name }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Table SQL</span>
+            <span class="info-value code">{{ entity.tableName }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Nombre de champs</span>
+            <span class="info-value">{{ getBasicFields().length }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Nombre de relations</span>
+            <span class="info-value">{{ getRelationFields().length }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Champs -->
+      @if (getBasicFields().length > 0) {
+        <div class="info-section">
+          <h3>Champs</h3>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Nom</th>
+                  <th>Type</th>
+                  <th>Requis</th>
+                  <th>Unique</th>
+                  <th>Valeur par défaut</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (field of getBasicFields(); track field.name) {
+                  <tr>
+                    <td class="field-name">{{ field.name }}</td>
+                    <td>
+                      <span class="type-badge">{{ getFieldTypeLabel(field.type) }}</span>
+                    </td>
+                    <td>
+                      @if (field.required) {
+                        <span class="badge badge-yes">Oui</span>
+                      } @else {
+                        <span class="badge badge-no">Non</span>
+                      }
+                    </td>
+                    <td>
+                      @if (field.unique) {
+                        <span class="badge badge-yes">Oui</span>
+                      } @else {
+                        <span class="badge badge-no">Non</span>
+                      }
+                    </td>
+                    <td>
+                      @if (field.defaultValue) {
+                        <code>{{ field.defaultValue }}</code>
+                      } @else {
+                        <span class="empty-value">-</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+
+      <!-- Relations sortantes -->
+      @if (getRelationFields().length > 0) {
+        <div class="info-section">
+          <h3>Relations sortantes</h3>
+          <div class="relations-grid">
+            @for (field of getRelationFields(); track field.name) {
+              <div class="relation-card">
+                <div class="relation-header">
+                  <span class="relation-name">{{ field.name }}</span>
+                  <span class="relation-type-badge">{{ getFieldTypeLabel(field.type) }}</span>
+                </div>
+                <div class="relation-body">
+                  <div class="relation-detail">
+                    <span class="detail-label">Entité cible</span>
+                    <a [routerLink]="['/generator/view', field.relationTarget]" class="detail-value link">{{ field.relationTarget }}</a>
+                  </div>
+                  @if (field.relationInverse) {
+                    <div class="relation-detail">
+                      <span class="detail-label">Propriété inverse</span>
+                      <span class="detail-value">{{ field.relationInverse }}</span>
+                    </div>
+                  }
+                  @if (field.onDelete) {
+                    <div class="relation-detail">
+                      <span class="detail-label">On Delete</span>
+                      <span class="detail-value code">{{ field.onDelete }}</span>
+                    </div>
+                  }
+                  <div class="relation-detail">
+                    <span class="detail-label">Eager loading</span>
+                    <span class="detail-value">
+                      @if (field.eager) {
+                        <span class="badge badge-yes">Oui</span>
+                      } @else {
+                        <span class="badge badge-no">Non</span>
+                      }
+                    </span>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Relations entrantes -->
+      @if (getIncomingRelations().length > 0) {
+        <div class="info-section">
+          <h3>Relations entrantes</h3>
+          <div class="relations-grid">
+            @for (rel of getIncomingRelations(); track rel.sourceEntity + rel.fieldName) {
+              <div class="relation-card incoming">
+                <div class="relation-header">
+                  <span class="relation-name">{{ rel.fieldName }}</span>
+                  <span class="relation-type-badge incoming-badge">{{ getFieldTypeLabel(rel.relationType) }}</span>
+                </div>
+                <div class="relation-body">
+                  <div class="relation-detail">
+                    <span class="detail-label">Depuis l'entité</span>
+                    <a [routerLink]="['/generator/view', rel.sourceEntity]" class="detail-value link">{{ rel.sourceEntity }}</a>
+                  </div>
+                  @if (rel.inverseProperty) {
+                    <div class="relation-detail">
+                      <span class="detail-label">Propriété inverse</span>
+                      <span class="detail-value">{{ rel.inverseProperty }}</span>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      @if (entity.fields.length === 0) {
+        <div class="info-section">
+          <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-1 12H5c-.55 0-1-.45-1-1V9c0-.55.45-1 1-1h14c.55 0 1 .45 1 1v8c0 .55-.45 1-1 1z"/>
+            </svg>
+            <p>Cette entité n'a aucun champ défini.</p>
+            <button class="btn btn-primary" (click)="editEntity()">Ajouter des champs</button>
+          </div>
+        </div>
+      }
+    }
+  </div>
+</div>

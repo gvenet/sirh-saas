@@ -54,6 +54,11 @@ export const routes: Routes = [
     canActivate: [authGuard, adminGuard]
   },
   {
+    path: 'generator/view/:name',
+    loadComponent: () => import('./generator/entity-view/entity-view').then(m => m.EntityViewComponent),
+    canActivate: [authGuard, adminGuard]
+  },
+  {
     path: '',
     redirectTo: '/dashboard',
     pathMatch: 'full'
