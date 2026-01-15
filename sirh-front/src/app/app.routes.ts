@@ -64,6 +64,11 @@ export const routes: Routes = [
     canActivate: [authGuard, adminGuard]
   },
   {
+    path: 'generator/page-editor/:id',
+    loadComponent: () => import('./generator/page-editor/page-editor').then(m => m.PageEditorComponent),
+    canActivate: [authGuard, adminGuard]
+  },
+  {
     path: '',
     redirectTo: '/dashboard',
     pathMatch: 'full'
