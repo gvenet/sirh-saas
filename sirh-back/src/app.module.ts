@@ -18,7 +18,8 @@ import { EntityPageModule } from './entity-page/entity-page.module';
       envFilePath: '.env',
     }),
     TypeOrmModule.forRootAsync({
-      imports: [ConfigModule, EmployeeModule, SkillModule],
+imports: [ConfigModule, EmployeeModule, SkillModule,
+],
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
         host: configService.get('DB_HOST'),

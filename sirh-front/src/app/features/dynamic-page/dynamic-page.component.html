@@ -1,0 +1,218 @@
+<div class="dynamic-page-wrapper">
+  @if (loading) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Chargement...</p>
+    </div>
+  }
+
+  @if (error) {
+    <div class="alert alert-error">
+      {{ error }}
+    </div>
+  }
+
+  @if (page && !loading) {
+    <div class="page-header">
+      <div class="header-left">
+        <h1>{{ page.name }}</h1>
+        @if (page.description) {
+          <p class="page-description">{{ page.description }}</p>
+        }
+      </div>
+      <div class="header-right">
+        @if (isEditMode) {
+          <button class="btn btn-secondary" (click)="cancel()" [disabled]="saving">
+            Annuler
+          </button>
+          <button class="btn btn-primary" (click)="save()" [disabled]="saving">
+            @if (saving) {
+              <span class="btn-spinner"></span>
+              Enregistrement...
+            } @else {
+              Enregistrer
+            }
+          </button>
+        }
+      </div>
+    </div>
+
+    <div class="page-content">
+      @for (entry of getFieldsBySection() | keyvalue; track entry.key) {
+        <div class="section">
+          <h2 class="section-title">{{ entry.key }}</h2>
+          <div class="fields-grid">
+            @for (field of entry.value; track field.id) {
+              <div class="field-wrapper" [class]="getColSpanClass(field)">
+                <label class="field-label">
+                  {{ field.label || field.fieldName }}
+                </label>
+
+                <!-- TEXT -->
+                @if (field.displayType === FieldDisplayType.TEXT) {
+                  @if (isReadOnly(field)) {
+                    <div class="field-value">{{ getFieldValue(field) || '-' }}</div>
+                  } @else {
+                    <input
+                      type="text"
+                      class="field-input"
+                      [value]="getFieldValue(field)"
+                      (input)="setFieldValue(field, $any($event.target).value)"
+                      [placeholder]="field.placeholder || ''"
+                    />
+                  }
+                }
+
+                <!-- TEXTAREA -->
+                @if (field.displayType === FieldDisplayType.TEXTAREA) {
+                  @if (isReadOnly(field)) {
+                    <div class="field-value field-value-multiline">{{ getFieldValue(field) || '-' }}</div>
+                  } @else {
+                    <textarea
+                      class="field-textarea"
+                      [value]="getFieldValue(field)"
+                      (input)="setFieldValue(field, $any($event.target).value)"
+                      [placeholder]="field.placeholder || ''"
+                      rows="4"
+                    ></textarea>
+                  }
+                }
+
+                <!-- NUMBER -->
+                @if (field.displayType === FieldDisplayType.NUMBER) {
+                  @if (isReadOnly(field)) {
+                    <div class="field-value">{{ getFieldValue(field) ?? '-' }}</div>
+                  } @else {
+                    <input
+                      type="number"
+                      class="field-input"
+                      [value]="getFieldValue(field)"
+                      (input)="setFieldValue(field, +$any($event.target).value)"
+                      [placeholder]="field.placeholder || ''"
+                    />
+                  }
+                }
+
+                <!-- DATE -->
+                @if (field.displayType === FieldDisplayType.DATE) {
+                  @if (isReadOnly(field)) {
+                    <div class="field-value">{{ formatDate(getFieldValue(field)) || '-' }}</div>
+                  } @else {
+                    <input
+                      type="date"
+                      class="field-input"
+                      [value]="getFieldValue(field)"
+                      (input)="setFieldValue(field, $any($event.target).value)"
+                    />
+                  }
+                }
+
+                <!-- DATETIME -->
+                @if (field.displayType === FieldDisplayType.DATETIME) {
+                  @if (isReadOnly(field)) {
+                    <div class="field-value">{{ formatDateTime(getFieldValue(field)) || '-' }}</div>
+                  } @else {
+                    <input
+                      type="datetime-local"
+                      class="field-input"
+                      [value]="getFieldValue(field)"
+                      (input)="setFieldValue(field, $any($event.target).value)"
+                    />
+                  }
+                }
+
+                <!-- BOOLEAN -->
+                @if (field.displayType === FieldDisplayType.BOOLEAN) {
+                  @if (isReadOnly(field)) {
+                    <div class="field-value">
+                      <span class="boolean-badge" [class.is-true]="getFieldValue(field)">
+                        {{ formatBoolean(getFieldValue(field)) }}
+                      </span>
+                    </div>
+                  } @else {
+                    <div class="checkbox-wrapper">
+                      <input
+                        type="checkbox"
+                        [checked]="getFieldValue(field)"
+                        (change)="setFieldValue(field, $any($event.target).checked)"
+                      />
+                    </div>
+                  }
+                }
+
+                <!-- SELECT -->
+                @if (field.displayType === FieldDisplayType.SELECT) {
+                  @if (isReadOnly(field)) {
+                    <div class="field-value">{{ getFieldValue(field) || '-' }}</div>
+                  } @else {
+                    <select
+                      class="field-select"
+                      [value]="getFieldValue(field)"
+                      (change)="setFieldValue(field, $any($event.target).value)">
+                      <option value="">Sélectionner...</option>
+                      <!-- Options would come from field.config.options or related data -->
+                    </select>
+                  }
+                }
+
+                <!-- TABLE (for relations) -->
+                @if (field.displayType === FieldDisplayType.TABLE) {
+                  <div class="related-table-wrapper">
+                    @if (getRelatedItems(field).length === 0) {
+                      <div class="empty-relation">Aucun élément</div>
+                    } @else {
+                      <table class="related-table">
+                        <thead>
+                          <tr>
+                            <th>ID</th>
+                            <th>Détails</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (item of getRelatedItems(field); track $index) {
+                            <tr>
+                              <td>{{ $any(item).id }}</td>
+                              <td>{{ $any(item).name || $any(item).label || '-' }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    }
+                  </div>
+                }
+
+                <!-- LIST (for relations - compact) -->
+                @if (field.displayType === FieldDisplayType.LIST) {
+                  <div class="related-list">
+                    @if (getRelatedItems(field).length === 0) {
+                      <span class="empty-relation">Aucun élément</span>
+                    } @else {
+                      @for (item of getRelatedItems(field); track $index) {
+                        <span class="list-item">{{ $any(item).name || $any(item).label || $any(item).id }}</span>
+                      }
+                    }
+                  </div>
+                }
+
+                <!-- AUTOCOMPLETE (placeholder for now) -->
+                @if (field.displayType === FieldDisplayType.AUTOCOMPLETE) {
+                  @if (isReadOnly(field)) {
+                    <div class="field-value">{{ getFieldValue(field) || '-' }}</div>
+                  } @else {
+                    <input
+                      type="text"
+                      class="field-input"
+                      [value]="getFieldValue(field)"
+                      (input)="setFieldValue(field, $any($event.target).value)"
+                      [placeholder]="field.placeholder || 'Rechercher...'"
+                    />
+                  }
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

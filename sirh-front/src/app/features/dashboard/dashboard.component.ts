@@ -39,10 +39,15 @@ export class DashboardComponent implements OnInit {
     this.dropdownOpen = false;
   }
 
-  navigateToMenuItem(route: string | undefined, entityName: string | undefined): void {
+  navigateToMenuItem(route: string | undefined, entityName: string | undefined, pageId: string | undefined): void {
     if (route) {
+      // Direct route navigation
       this.router.navigate([route]);
+    } else if (pageId) {
+      // Navigate to dynamic page
+      this.router.navigate(['/page', pageId]);
     } else if (entityName) {
+      // Legacy: navigate to entity data
       this.router.navigate(['/data', entityName.toLowerCase()]);
     }
   }

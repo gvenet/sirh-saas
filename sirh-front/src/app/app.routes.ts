@@ -68,6 +68,17 @@ export const routes: Routes = [
     loadComponent: () => import('./generator/page-editor/page-editor').then(m => m.PageEditorComponent),
     canActivate: [authGuard, adminGuard]
   },
+  // Dynamic pages - view entity with specific page configuration
+  {
+    path: 'page/:pageId',
+    loadComponent: () => import('./features/dynamic-page/dynamic-page.component').then(m => m.DynamicPageComponent),
+    canActivate: [authGuard]
+  },
+  {
+    path: 'page/:pageId/:entityId',
+    loadComponent: () => import('./features/dynamic-page/dynamic-page.component').then(m => m.DynamicPageComponent),
+    canActivate: [authGuard]
+  },
   {
     path: '',
     redirectTo: '/dashboard',

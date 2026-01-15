@@ -1115,9 +1115,10 @@ export class ${entityName}Module {}
     // Récupérer le nom de la table et les relations avant de supprimer les fichiers
     let tableName: string | null = null;
     let relationTables: string[] = [];
+    let schema: any = null;
 
     try {
-      const schema = await this.getEntitySchema(name);
+      schema = await this.getEntitySchema(name);
       tableName = schema.tableName;
 
       // Récupérer les tables de jonction ManyToMany (utilise tableName, pas moduleName)
@@ -1125,6 +1126,11 @@ export class ${entityName}Module {}
       relationTables = manyToManyRelations.map(rel => `${schema.tableName}_${rel.name}`);
     } catch (e) {
       console.warn(`Could not get entity schema: ${e.message}`);
+    }
+
+    // Nettoyer les relations inverses dans les autres entités AVANT de supprimer les fichiers
+    if (schema) {
+      await this.cleanupAllInverseRelationsOnDelete(entityName, schema.fields);
     }
 
     // Supprimer le dossier de l'entité
@@ -1176,6 +1182,110 @@ export class ${entityName}Module {}
       }
     } finally {
       await queryRunner.release();
+    }
+  }
+
+  /**
+   * Nettoie TOUTES les relations inverses dans les autres entités lors de la suppression d'une entité
+   */
+  private async cleanupAllInverseRelationsOnDelete(
+    deletedEntityName: string,
+    fields: any[],
+  ): Promise<void> {
+    // 1. Nettoyer les relations inverses que cette entité a créées sur d'autres entités
+    const relationFields = fields.filter((f: any) =>
+      ['many-to-one', 'one-to-many', 'many-to-many', 'one-to-one'].includes(f.type) && f.relationTarget
+    );
+
+    for (const rel of relationFields) {
+      const inversePropertyName = rel.relationInverse || deletedEntityName.toLowerCase() + 's';
+      await this.removeInverseRelationFromTargetEntity(
+        deletedEntityName,
+        rel.relationTarget,
+        inversePropertyName,
+      );
+    }
+
+    // 2. Nettoyer les références à cette entité dans toutes les autres entités
+    await this.removeAllReferencesToEntity(deletedEntityName);
+  }
+
+  /**
+   * Supprime toutes les références à une entité supprimée dans les autres entités
+   */
+  private async removeAllReferencesToEntity(deletedEntityName: string): Promise<void> {
+    const entities = await this.listEntities();
+
+    for (const entity of entities) {
+      if (entity.name === deletedEntityName) continue;
+
+      const entityFilePath = path.join(entity.path, `${entity.moduleName}.entity.ts`);
+      if (!fs.existsSync(entityFilePath)) continue;
+
+      let content = fs.readFileSync(entityFilePath, 'utf-8');
+      let modified = false;
+
+      // Supprimer l'import de l'entité supprimée
+      const importRegex = new RegExp(
+        `import \\{ ${deletedEntityName} \\} from '\\.\\./${deletedEntityName.toLowerCase()}/${deletedEntityName.toLowerCase()}\\.entity';\\n?`,
+        'g'
+      );
+      if (importRegex.test(content)) {
+        content = content.replace(importRegex, '');
+        modified = true;
+      }
+
+      // Supprimer toutes les relations qui pointent vers l'entité supprimée
+      const relationPatterns = [
+        // ManyToOne avec JoinColumn
+        new RegExp(
+          `\\s*@ManyToOne\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*@JoinColumn\\([^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName};`,
+          'g'
+        ),
+        // OneToMany
+        new RegExp(
+          `\\s*@OneToMany\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName}\\[\\];`,
+          'g'
+        ),
+        // ManyToMany avec JoinTable
+        new RegExp(
+          `\\s*@ManyToMany\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*@JoinTable\\([^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName}\\[\\];`,
+          'g'
+        ),
+        // ManyToMany sans JoinTable (côté inverse)
+        new RegExp(
+          `\\s*@ManyToMany\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName}\\[\\];`,
+          'g'
+        ),
+        // OneToOne avec JoinColumn
+        new RegExp(
+          `\\s*@OneToOne\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*@JoinColumn\\([^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName};`,
+          'g'
+        ),
+        // OneToOne sans JoinColumn (côté inverse)
+        new RegExp(
+          `\\s*@OneToOne\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName};`,
+          'g'
+        ),
+      ];
+
+      for (const pattern of relationPatterns) {
+        if (pattern.test(content)) {
+          content = content.replace(pattern, '');
+          modified = true;
+        }
+      }
+
+      if (modified) {
+        // Nettoyer les imports TypeORM inutilisés
+        content = this.cleanupUnusedTypeOrmImports(content);
+
+        // Nettoyer les lignes vides multiples
+        content = content.replace(/\n{3,}/g, '\n\n');
+
+        fs.writeFileSync(entityFilePath, content);
+        console.log(`Cleaned up references to ${deletedEntityName} in ${entity.name}`);
+      }
     }
   }
 

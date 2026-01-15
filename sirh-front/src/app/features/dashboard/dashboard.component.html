@@ -30,7 +30,7 @@
     <!-- Navigation -->
     <nav class="sidebar-nav">
       @for (item of appService.menuItems(); track item.id) {
-        <button class="sidebar-item" [class.active]="isActiveRoute(item.route)" (click)="navigateToMenuItem(item.route, item.entityName)">
+        <button class="sidebar-item" [class.active]="isActiveRoute(item.route)" (click)="navigateToMenuItem(item.route, item.entityName, item.pageId)">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
             @if (item.route === '/dashboard') {
               <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/>
