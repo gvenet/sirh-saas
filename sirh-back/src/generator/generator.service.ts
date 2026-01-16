@@ -1,24 +1,378 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { CreateEntityDto } from './dto/create-entity.dto';
 import { FieldDto, FieldType, isRelationType } from './dto/field.dto';
 import { EntityPageService } from '../entity-page/entity-page.service';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as chokidar from 'chokidar';
 
 @Injectable()
-export class GeneratorService {
+export class GeneratorService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(GeneratorService.name);
   private readonly srcPath = path.join(process.cwd(), 'src');
+  private fileWatcher: chokidar.FSWatcher | null = null;
+  private isShuttingDown = false;
 
   constructor(
     private readonly dataSource: DataSource,
     private readonly entityPageService: EntityPageService,
   ) {}
 
+  /**
+   * Initialise le watcher de fichiers au démarrage du module
+   */
+  onModuleInit() {
+    this.logger.warn('onModuleInit');
+    this.initFileWatcher();
+  }
+
+  /**
+   * Arrête le watcher à la destruction du module
+   */
+  async onModuleDestroy(): Promise<void> {
+    this.logger.warn('onModuleDestroy');
+    this.isShuttingDown = true;
+    if (this.fileWatcher) {
+      this.logger.log('Closing file watcher...');
+      await this.fileWatcher.close();
+      this.fileWatcher = null;
+      this.logger.log('File watcher closed');
+    }
+  }
+
+  /**
+   * Initialise le watcher pour surveiller les fichiers .ts dans src/
+   * Log quel fichier a été modifié/ajouté/supprimé
+   */
+  private initFileWatcher(): void {
+    this.logger.warn('initFileWatcher');
+
+    // Surveiller tous les fichiers .ts sauf node_modules et dist
+    const watchPath = path.join(this.srcPath, '**/*.ts');
+
+    this.fileWatcher = chokidar.watch(watchPath, {
+      ignored: [
+        '**/node_modules/**',
+        '**/dist/**',
+        '**/*.spec.ts',
+        '**/*.test.ts',
+      ],
+      persistent: true,
+      ignoreInitial: true, // Ne pas logger les fichiers existants au démarrage
+      awaitWriteFinish: {
+        stabilityThreshold: 100,
+        pollInterval: 50,
+      },
+    });
+
+    this.fileWatcher
+      .on('add', (filePath) => {
+        if (this.isShuttingDown) return;
+        const relativePath = path.relative(process.cwd(), filePath);
+        this.logger.warn(`📁 FILE ADDED: ${relativePath}`);
+      })
+      .on('change', (filePath) => {
+        if (this.isShuttingDown) return;
+        const relativePath = path.relative(process.cwd(), filePath);
+        this.logger.warn(`✏️  FILE CHANGED: ${relativePath}`);
+      })
+      .on('unlink', (filePath) => {
+        if (this.isShuttingDown) return;
+        const relativePath = path.relative(process.cwd(), filePath);
+        this.logger.warn(`🗑️  FILE DELETED: ${relativePath}`);
+      })
+      .on('error', (error: Error) => {
+        if (this.isShuttingDown) return;
+        this.logger.error(`Watcher error: ${error.message}`);
+      });
+
+    this.logger.log('File watcher initialized - monitoring src/**/*.ts');
+  }
+
+  /**
+   * Synchronise le schéma de la base de données manuellement
+   * Crée la table principale et les colonnes pour une entité
+   */
+  async syncDatabaseSchema(tableName: string, fields: FieldDto[]): Promise<void> {
+    this.logger.warn('syncDatabaseSchema');
+    const queryRunner = this.dataSource.createQueryRunner();
+
+    try {
+      await queryRunner.connect();
+
+      // Vérifier si la table existe
+      const tableExists = await queryRunner.hasTable(tableName);
+
+      if (!tableExists) {
+        // Créer la table avec les colonnes de base
+        await this.createTable(queryRunner, tableName, fields);
+      } else {
+        // Mettre à jour la table existante (ajouter les nouvelles colonnes)
+        await this.updateTable(queryRunner, tableName, fields);
+      }
+
+      this.logger.log(`Database schema synchronized for table: ${tableName}`);
+    } catch (error) {
+      this.logger.error(`Failed to sync database schema for ${tableName}: ${error.message}`);
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /**
+   * Crée une nouvelle table avec toutes ses colonnes
+   */
+  private async createTable(queryRunner: any, tableName: string, fields: FieldDto[]): Promise<void> {
+    this.logger.warn('createTable');
+
+    // Séparer les champs normaux des relations
+    const normalFields = fields.filter(f => !isRelationType(f.type));
+    const relationFields = fields.filter(f => isRelationType(f.type));
+
+    // Construire les colonnes
+    const columns: string[] = [
+      `"id" uuid PRIMARY KEY DEFAULT uuid_generate_v4()`,
+    ];
+
+    // Ajouter les colonnes normales
+    for (const field of normalFields) {
+      const columnDef = this.buildColumnDefinition(field);
+      columns.push(columnDef);
+    }
+
+    // Ajouter les colonnes de clé étrangère pour les relations ManyToOne et OneToOne
+    for (const field of relationFields) {
+      if (field.type === FieldType.MANY_TO_ONE || field.type === FieldType.ONE_TO_ONE) {
+        const nullable = !field.required ? 'NULL' : 'NOT NULL';
+        columns.push(`"${field.name}_id" uuid ${nullable}`);
+      }
+    }
+
+    // Ajouter les colonnes de timestamps
+    columns.push(`"createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+    columns.push(`"updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+
+    // Activer l'extension uuid-ossp si nécessaire
+    await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
+
+    // Créer la table
+    const createTableSQL = `CREATE TABLE "${tableName}" (\n  ${columns.join(',\n  ')}\n)`;
+    this.logger.log(`Creating table: ${tableName}`);
+    await queryRunner.query(createTableSQL);
+
+    // Ajouter les contraintes de clé étrangère
+    for (const field of relationFields) {
+      if (field.type === FieldType.MANY_TO_ONE || field.type === FieldType.ONE_TO_ONE) {
+        await this.addForeignKeyConstraint(queryRunner, tableName, field);
+      }
+    }
+
+    // Créer les tables de jonction pour ManyToMany
+    for (const field of relationFields) {
+      if (field.type === FieldType.MANY_TO_MANY) {
+        await this.createJunctionTable(queryRunner, tableName, field);
+      }
+    }
+  }
+
+  /**
+   * Met à jour une table existante avec les nouvelles colonnes
+   */
+  private async updateTable(queryRunner: any, tableName: string, fields: FieldDto[]): Promise<void> {
+    this.logger.warn('updateTable');
+
+    // Récupérer les colonnes existantes
+    const existingColumns = await queryRunner.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = $1
+    `, [tableName]);
+    const existingColumnNames = new Set(existingColumns.map((c: any) => c.column_name));
+
+    // Séparer les champs normaux des relations
+    const normalFields = fields.filter(f => !isRelationType(f.type));
+    const relationFields = fields.filter(f => isRelationType(f.type));
+
+    // Ajouter les nouvelles colonnes normales
+    for (const field of normalFields) {
+      if (!existingColumnNames.has(field.name)) {
+        const columnType = this.getPostgresType(field.type);
+        const nullable = !field.required ? '' : 'NOT NULL';
+        const defaultValue = field.defaultValue ? `DEFAULT '${field.defaultValue}'` : '';
+
+        await queryRunner.query(`
+          ALTER TABLE "${tableName}"
+          ADD COLUMN "${field.name}" ${columnType} ${nullable} ${defaultValue}
+        `);
+        this.logger.log(`Added column ${field.name} to ${tableName}`);
+      }
+    }
+
+    // Ajouter les colonnes de FK pour les nouvelles relations
+    for (const field of relationFields) {
+      if (field.type === FieldType.MANY_TO_ONE || field.type === FieldType.ONE_TO_ONE) {
+        const fkColumnName = `${field.name}_id`;
+        if (!existingColumnNames.has(fkColumnName)) {
+          const nullable = !field.required ? '' : 'NOT NULL';
+          await queryRunner.query(`
+            ALTER TABLE "${tableName}"
+            ADD COLUMN "${fkColumnName}" uuid ${nullable}
+          `);
+          await this.addForeignKeyConstraint(queryRunner, tableName, field);
+          this.logger.log(`Added FK column ${fkColumnName} to ${tableName}`);
+        }
+      }
+    }
+
+    // Créer les tables de jonction pour les nouvelles relations ManyToMany
+    for (const field of relationFields) {
+      if (field.type === FieldType.MANY_TO_MANY) {
+        const junctionTableName = `${tableName}_${field.name}`;
+        const junctionExists = await queryRunner.hasTable(junctionTableName);
+        if (!junctionExists) {
+          await this.createJunctionTable(queryRunner, tableName, field);
+        }
+      }
+    }
+  }
+
+  /**
+   * Construit la définition SQL d'une colonne
+   */
+  private buildColumnDefinition(field: FieldDto): string {
+    this.logger.warn('buildColumnDefinition');
+    const columnType = this.getPostgresType(field.type);
+    const nullable = !field.required ? '' : 'NOT NULL';
+    const unique = field.unique ? 'UNIQUE' : '';
+    const defaultValue = field.defaultValue ? `DEFAULT '${field.defaultValue}'` : '';
+
+    return `"${field.name}" ${columnType} ${nullable} ${unique} ${defaultValue}`.trim().replace(/\s+/g, ' ');
+  }
+
+  /**
+   * Retourne le type PostgreSQL correspondant au type de champ
+   */
+  private getPostgresType(fieldType: FieldType): string {
+    this.logger.warn('getPostgresType');
+    const typeMap: Record<string, string> = {
+      [FieldType.STRING]: 'VARCHAR(255)',
+      [FieldType.EMAIL]: 'VARCHAR(255)',
+      [FieldType.TEXT]: 'TEXT',
+      [FieldType.NUMBER]: 'INTEGER',
+      [FieldType.BOOLEAN]: 'BOOLEAN',
+      [FieldType.DATE]: 'TIMESTAMP',
+    };
+    return typeMap[fieldType] || 'VARCHAR(255)';
+  }
+
+  /**
+   * Ajoute une contrainte de clé étrangère
+   */
+  private async addForeignKeyConstraint(queryRunner: any, tableName: string, field: FieldDto): Promise<void> {
+    this.logger.warn('addForeignKeyConstraint');
+    if (!field.relationTarget) return;
+
+    const targetTableName = await this.getTableNameForEntity(field.relationTarget);
+    if (!targetTableName) {
+      this.logger.warn(`Cannot find table for entity ${field.relationTarget}, skipping FK constraint`);
+      return;
+    }
+
+    const constraintName = `fk_${tableName}_${field.name}`;
+    const onDelete = field.onDelete || 'SET NULL';
+
+    try {
+      await queryRunner.query(`
+        ALTER TABLE "${tableName}"
+        ADD CONSTRAINT "${constraintName}"
+        FOREIGN KEY ("${field.name}_id")
+        REFERENCES "${targetTableName}"("id")
+        ON DELETE ${onDelete}
+      `);
+      this.logger.log(`Added FK constraint ${constraintName}`);
+    } catch (error) {
+      this.logger.warn(`Failed to add FK constraint ${constraintName}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Crée une table de jonction pour une relation ManyToMany
+   */
+  private async createJunctionTable(queryRunner: any, tableName: string, field: FieldDto): Promise<void> {
+    this.logger.warn('createJunctionTable');
+    if (!field.relationTarget) return;
+
+    const targetTableName = await this.getTableNameForEntity(field.relationTarget);
+    if (!targetTableName) {
+      this.logger.warn(`Cannot find table for entity ${field.relationTarget}, skipping junction table`);
+      return;
+    }
+
+    const junctionTableName = `${tableName}_${field.name}`;
+    const sourceColumnName = `${tableName}Id`;
+    const targetColumnName = `${targetTableName}Id`;
+
+    await queryRunner.query(`
+      CREATE TABLE "${junctionTableName}" (
+        "${sourceColumnName}" uuid NOT NULL,
+        "${targetColumnName}" uuid NOT NULL,
+        PRIMARY KEY ("${sourceColumnName}", "${targetColumnName}"),
+        CONSTRAINT "fk_${junctionTableName}_source"
+          FOREIGN KEY ("${sourceColumnName}")
+          REFERENCES "${tableName}"("id")
+          ON DELETE CASCADE,
+        CONSTRAINT "fk_${junctionTableName}_target"
+          FOREIGN KEY ("${targetColumnName}")
+          REFERENCES "${targetTableName}"("id")
+          ON DELETE CASCADE
+      )
+    `);
+    this.logger.log(`Created junction table ${junctionTableName}`);
+  }
+
+  /**
+   * Récupère le nom de la table pour une entité donnée
+   */
+  private async getTableNameForEntity(entityName: string): Promise<string | null> {
+    this.logger.warn('getTableNameForEntity');
+    const moduleName = entityName.toLowerCase();
+    const entityFilePath = path.join(this.srcPath, moduleName, `${moduleName}.entity.ts`);
+
+    if (!fs.existsSync(entityFilePath)) {
+      return null;
+    }
+
+    const content = fs.readFileSync(entityFilePath, 'utf-8');
+    const match = content.match(/@Entity\('([^']+)'\)/);
+    return match ? match[1] : moduleName;
+  }
+
+  /**
+   * Supprime une colonne de la base de données
+   */
+  async dropColumn(tableName: string, columnName: string): Promise<void> {
+    this.logger.warn('dropColumn');
+    const queryRunner = this.dataSource.createQueryRunner();
+
+    try {
+      await queryRunner.connect();
+      await queryRunner.query(`ALTER TABLE "${tableName}" DROP COLUMN IF EXISTS "${columnName}" CASCADE`);
+      this.logger.log(`Dropped column ${columnName} from ${tableName}`);
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
   async generateEntity(createEntityDto: CreateEntityDto) {
+    this.logger.warn('generateEntity');
     const { name, tableName, fields } = createEntityDto;
     const entityName = this.capitalize(name);
     const moduleName = name.toLowerCase();
+
+    // Synchroniser le schéma de base de données AVANT de créer les fichiers
+    await this.syncDatabaseSchema(tableName, fields);
 
     // Créer le dossier du module
     const modulePath = path.join(this.srcPath, moduleName);
@@ -68,6 +422,7 @@ export class GeneratorService {
     tableName: string,
     fields: FieldDto[],
   ) {
+    this.logger.warn('generateEntityFile');
     // Séparer les champs normaux des relations
     const normalFields = fields.filter(f => !isRelationType(f.type));
     const relationFields = fields.filter(f => isRelationType(f.type));
@@ -129,6 +484,7 @@ export class GeneratorService {
   }
 
   private generateFieldColumn(field: FieldDto): string {
+    this.logger.warn('generateFieldColumn');
     const columnType = this.getColumnType(field.type);
     const options: string[] = [];
 
@@ -144,6 +500,7 @@ export class GeneratorService {
   }
 
   private generateRelationField(field: FieldDto, currentEntityName: string, tableName?: string): string {
+    this.logger.warn('generateRelationField');
     const target = field.relationTarget || 'Entity';
     const inverse = field.relationInverse || currentEntityName.toLowerCase() + 's';
     const onDelete = field.onDelete || 'SET NULL';
@@ -181,6 +538,7 @@ export class GeneratorService {
     entityName: string,
     fields: FieldDto[],
   ) {
+    this.logger.warn('generateDtoFiles');
     const moduleName = entityName.toLowerCase();
 
     // Séparer les champs normaux des relations
@@ -226,6 +584,7 @@ export class Update${entityName}Dto extends PartialType(Create${entityName}Dto) 
   }
 
   private generateDtoField(field: FieldDto, isUpdate: boolean): string {
+    this.logger.warn('generateDtoField');
     const decorator = this.getDtoDecorator(field.type);
     const optional = !field.required || isUpdate ? '  @IsOptional()' : '';
     const typeTransform =
@@ -236,6 +595,7 @@ export class Update${entityName}Dto extends PartialType(Create${entityName}Dto) 
   }
 
   private generateRelationDtoField(field: FieldDto): string {
+    this.logger.warn('generateRelationDtoField');
     const optional = !field.required ? '  @IsOptional()\n' : '';
 
     // Pour ManyToOne et OneToOne, on attend un ID (UUID)
@@ -260,6 +620,7 @@ export class Update${entityName}Dto extends PartialType(Create${entityName}Dto) 
     moduleName: string,
     fields?: FieldDto[],
   ) {
+    this.logger.warn('generateServiceFile');
     // Extraire les noms des relations pour le chargement automatique
     const relationFields = fields?.filter(f => isRelationType(f.type)) || [];
     const relationNames = relationFields.map(f => `'${f.name}'`).join(', ');
@@ -319,6 +680,7 @@ export class ${entityName}Service {
     entityName: string,
     moduleName: string,
   ) {
+    this.logger.warn('generateControllerFile');
     const content = `import {
   Controller,
   Get,
@@ -377,6 +739,7 @@ export class ${entityName}Controller {
     entityName: string,
     moduleName: string,
   ) {
+    this.logger.warn('generateModuleFile');
     const content = `import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ${entityName}Service } from './${moduleName}.service';
@@ -396,6 +759,7 @@ export class ${entityName}Module {}
   }
 
   private getColumnType(fieldType: FieldType): string {
+    this.logger.warn('getColumnType');
     const typeMap = {
       [FieldType.STRING]: 'varchar',
       [FieldType.EMAIL]: 'varchar',
@@ -408,6 +772,7 @@ export class ${entityName}Module {}
   }
 
   private getTypeScriptType(fieldType: FieldType): string {
+    this.logger.warn('getTypeScriptType');
     const typeMap = {
       [FieldType.STRING]: 'string',
       [FieldType.EMAIL]: 'string',
@@ -420,6 +785,7 @@ export class ${entityName}Module {}
   }
 
   private getDtoDecorator(fieldType: FieldType): string {
+    this.logger.warn('getDtoDecorator');
     const decoratorMap = {
       [FieldType.STRING]: '@IsString()',
       [FieldType.EMAIL]: '@IsEmail()',
@@ -432,6 +798,7 @@ export class ${entityName}Module {}
   }
 
   private capitalize(str: string): string {
+    this.logger.warn('capitalize');
     return str.charAt(0).toUpperCase() + str.slice(1);
   }
 
@@ -442,6 +809,7 @@ export class ${entityName}Module {}
     sourceEntityName: string,
     fields: FieldDto[],
   ): Promise<void> {
+    this.logger.warn('addInverseRelationsToTargetEntities');
     const relationFields = fields.filter(f => isRelationType(f.type) && f.relationTarget);
 
     for (const field of relationFields) {
@@ -450,7 +818,7 @@ export class ${entityName}Module {}
       const targetEntityPath = path.join(this.srcPath, targetModuleName, `${targetModuleName}.entity.ts`);
 
       if (!fs.existsSync(targetEntityPath)) {
-        console.warn(`Target entity ${targetEntityName} not found, skipping inverse relation`);
+        this.logger.warn(`Target entity ${targetEntityName} not found, skipping inverse relation`);
         continue;
       }
 
@@ -459,7 +827,7 @@ export class ${entityName}Module {}
       // Vérifier si la relation inverse existe déjà
       const inversePropertyName = field.relationInverse || sourceEntityName.toLowerCase() + 's';
       if (targetContent.includes(`${inversePropertyName}:`)) {
-        console.log(`Inverse relation ${inversePropertyName} already exists in ${targetEntityName}`);
+        this.logger.log(`Inverse relation ${inversePropertyName} already exists in ${targetEntityName}`);
         continue;
       }
 
@@ -503,7 +871,7 @@ export class ${entityName}Module {}
       }
 
       fs.writeFileSync(targetEntityPath, targetContent);
-      console.log(`Added inverse relation ${inversePropertyName} to ${targetEntityName}`);
+      this.logger.log(`Added inverse relation ${inversePropertyName} to ${targetEntityName}`);
     }
   }
 
@@ -513,6 +881,7 @@ export class ${entityName}Module {}
     targetEntityName: string,
     inversePropertyName: string,
   ): { code: string; typeOrmImport: string } | null {
+    this.logger.warn('getInverseRelationCode');
     const sourceVar = sourceEntityName.toLowerCase();
     const fieldName = field.name;
 
@@ -556,6 +925,7 @@ export class ${entityName}Module {}
   }
 
   private addTypeOrmImportIfNeeded(content: string, importName: string): string {
+    this.logger.warn('addTypeOrmImportIfNeeded');
     // Trouver la ligne d'import typeorm
     const typeOrmImportMatch = content.match(/import \{ ([^}]+) \} from 'typeorm';/);
 
@@ -579,10 +949,11 @@ export class ${entityName}Module {}
     entityName: string,
     moduleName: string,
   ): Promise<void> {
+    this.logger.warn('updateAppModule');
     const appModulePath = path.join(this.srcPath, 'app.module.ts');
 
     if (!fs.existsSync(appModulePath)) {
-      console.warn('app.module.ts not found, skipping auto-import');
+      this.logger.warn('app.module.ts not found, skipping auto-import');
       return;
     }
 
@@ -591,7 +962,7 @@ export class ${entityName}Module {}
     // Vérifier si le module est déjà importé
     const importStatement = `import { ${entityName}Module } from './${moduleName}/${moduleName}.module';`;
     if (content.includes(`${entityName}Module`)) {
-      console.log(`${entityName}Module already exists in app.module.ts`);
+      this.logger.log(`${entityName}Module already exists in app.module.ts`);
       return;
     }
 
@@ -629,10 +1000,11 @@ export class ${entityName}Module {}
     }
 
     fs.writeFileSync(appModulePath, content);
-    console.log(`${entityName}Module added to app.module.ts`);
+    this.logger.log(`${entityName}Module added to app.module.ts`);
   }
 
   async listEntities() {
+    this.logger.warn('listEntities');
     const entities: Array<{ name: string; moduleName: string; path: string }> = [];
     const srcPath = this.srcPath;
 
@@ -659,6 +1031,7 @@ export class ${entityName}Module {}
   }
 
   async getEntitySchema(name: string) {
+    this.logger.warn('getEntitySchema');
     const moduleName = name.toLowerCase();
     const entityPath = path.join(this.srcPath, moduleName);
     const entityFilePath = path.join(entityPath, `${moduleName}.entity.ts`);
@@ -703,6 +1076,7 @@ export class ${entityName}Module {}
     relationType: string;
     inverseProperty: string;
   }>> {
+    this.logger.warn('findIncomingRelations');
     const incomingRelations: Array<{
       sourceEntity: string;
       fieldName: string;
@@ -799,6 +1173,7 @@ export class ${entityName}Module {}
   }
 
   private extractInverseProperty(content: string, fieldName: string, relationType: string): string {
+    this.logger.warn('extractInverseProperty');
     // Chercher le pattern: @RelationType(() => Target, target => target.inverseProperty)
     const regex = new RegExp(
       `@${relationType}\\(\\(\\)\\s*=>\\s*\\w+,\\s*\\w+\\s*=>\\s*\\w+\\.(\\w+)`,
@@ -818,6 +1193,7 @@ export class ${entityName}Module {}
   }
 
   private parseEntityFields(entityContent: string): any[] {
+    this.logger.warn('parseEntityFields');
     const fields: Array<{
       name: string;
       type: string;
@@ -910,11 +1286,13 @@ export class ${entityName}Module {}
   }
 
   private extractTableName(entityContent: string): string {
+    this.logger.warn('extractTableName');
     const match = entityContent.match(/@Entity\('([^']+)'\)/);
     return match ? match[1] : '';
   }
 
   private mapDbTypeToFieldType(dbType: string): string {
+    this.logger.warn('mapDbTypeToFieldType');
     const typeMap = {
       'varchar': 'string',
       'text': 'text',
@@ -926,15 +1304,20 @@ export class ${entityName}Module {}
   }
 
   async updateEntity(name: string, updateEntityDto: CreateEntityDto) {
+    this.logger.warn('updateEntity');
     // Récupérer les anciennes relations avant suppression
     const oldSchema = await this.getEntitySchema(name);
     const oldRelations = oldSchema.fields.filter(f => isRelationType(f.type as FieldType));
+    const oldFields = oldSchema.fields;
 
     // Supprimer l'ancienne entité (sans supprimer la table en base pour conserver les données)
     await this.deleteEntity(name, false, false);
 
-    // Recréer avec les nouvelles données
+    // Recréer avec les nouvelles données (syncDatabaseSchema sera appelé dans generateEntity)
     const result = await this.generateEntity(updateEntityDto);
+
+    // Nettoyer les colonnes supprimées de la base de données
+    await this.cleanupRemovedColumns(oldSchema.tableName, oldFields, updateEntityDto.fields);
 
     // Nettoyer les relations inverses orphelines
     const newRelations = updateEntityDto.fields.filter(f => isRelationType(f.type));
@@ -947,6 +1330,41 @@ export class ${entityName}Module {}
   }
 
   /**
+   * Supprime les colonnes qui n'existent plus dans la nouvelle définition
+   */
+  private async cleanupRemovedColumns(
+    tableName: string,
+    oldFields: any[],
+    newFields: FieldDto[],
+  ): Promise<void> {
+    this.logger.warn('cleanupRemovedColumns');
+
+    const newFieldNames = new Set(newFields.map(f => f.name));
+    const newRelationFkNames = new Set(
+      newFields
+        .filter(f => f.type === FieldType.MANY_TO_ONE || f.type === FieldType.ONE_TO_ONE)
+        .map(f => `${f.name}_id`)
+    );
+
+    for (const oldField of oldFields) {
+      // Vérifier les champs normaux
+      if (!['many-to-one', 'one-to-many', 'many-to-many', 'one-to-one'].includes(oldField.type)) {
+        if (!newFieldNames.has(oldField.name)) {
+          await this.dropColumn(tableName, oldField.name);
+        }
+      }
+
+      // Vérifier les colonnes FK pour ManyToOne et OneToOne
+      if (oldField.type === 'many-to-one' || oldField.type === 'one-to-one') {
+        const fkColumnName = `${oldField.name}_id`;
+        if (!newRelationFkNames.has(fkColumnName) && !newFieldNames.has(oldField.name)) {
+          await this.dropColumn(tableName, fkColumnName);
+        }
+      }
+    }
+  }
+
+  /**
    * Supprime les tables de jonction ManyToMany qui n'existent plus après une mise à jour
    */
   private async cleanupOrphanedJunctionTables(
@@ -954,6 +1372,7 @@ export class ${entityName}Module {}
     oldRelations: any[],
     newRelations: FieldDto[],
   ): Promise<void> {
+    this.logger.warn('cleanupOrphanedJunctionTables');
     const oldManyToMany = oldRelations.filter(r => r.type === 'many-to-many');
     const newManyToMany = newRelations.filter(r => r.type === FieldType.MANY_TO_MANY);
 
@@ -975,14 +1394,15 @@ export class ${entityName}Module {}
    * Supprime une table de jonction de la base de données
    */
   private async dropJunctionTable(tableName: string): Promise<void> {
+    this.logger.warn('dropJunctionTable');
     const queryRunner = this.dataSource.createQueryRunner();
 
     try {
       await queryRunner.connect();
       await queryRunner.query(`DROP TABLE IF EXISTS "${tableName}" CASCADE`);
-      console.log(`Dropped junction table: ${tableName}`);
+      this.logger.log(`Dropped junction table: ${tableName}`);
     } catch (e) {
-      console.warn(`Failed to drop junction table ${tableName}: ${e.message}`);
+      this.logger.warn(`Failed to drop junction table ${tableName}: ${e.message}`);
     } finally {
       await queryRunner.release();
     }
@@ -996,6 +1416,7 @@ export class ${entityName}Module {}
     oldRelations: any[],
     newRelations: FieldDto[],
   ): Promise<void> {
+    this.logger.warn('cleanupOrphanedInverseRelations');
     for (const oldRel of oldRelations) {
       // Vérifier si cette relation existe encore dans les nouvelles relations
       const stillExists = newRelations.some(
@@ -1023,6 +1444,7 @@ export class ${entityName}Module {}
     targetEntityName: string,
     inversePropertyName: string,
   ): Promise<void> {
+    this.logger.warn('removeInverseRelationFromTargetEntity');
     const targetModuleName = targetEntityName.toLowerCase();
     const targetEntityPath = path.join(this.srcPath, targetModuleName, `${targetModuleName}.entity.ts`);
 
@@ -1071,7 +1493,7 @@ export class ${entityName}Module {}
       }
 
       fs.writeFileSync(targetEntityPath, content);
-      console.log(`Removed inverse relation ${inversePropertyName} from ${targetEntityName}`);
+      this.logger.log(`Removed inverse relation ${inversePropertyName} from ${targetEntityName}`);
     }
   }
 
@@ -1079,6 +1501,7 @@ export class ${entityName}Module {}
    * Nettoie les imports TypeORM qui ne sont plus utilisés
    */
   private cleanupUnusedTypeOrmImports(content: string): string {
+    this.logger.warn('cleanupUnusedTypeOrmImports');
     const typeOrmImportMatch = content.match(/import \{ ([^}]+) \} from 'typeorm';/);
     if (!typeOrmImportMatch) return content;
 
@@ -1104,6 +1527,7 @@ export class ${entityName}Module {}
   }
 
   async deleteEntity(name: string, removeFromAppModule: boolean = true, dropTable: boolean = true) {
+    this.logger.warn('deleteEntity');
     const moduleName = name.toLowerCase();
     const entityName = this.capitalize(name);
     const entityPath = path.join(this.srcPath, moduleName);
@@ -1125,7 +1549,7 @@ export class ${entityName}Module {}
       const manyToManyRelations = schema.fields.filter(f => f.type === 'many-to-many');
       relationTables = manyToManyRelations.map(rel => `${schema.tableName}_${rel.name}`);
     } catch (e) {
-      console.warn(`Could not get entity schema: ${e.message}`);
+      this.logger.warn(`Could not get entity schema: ${e.message}`);
     }
 
     // Nettoyer les relations inverses dans les autres entités AVANT de supprimer les fichiers
@@ -1158,6 +1582,7 @@ export class ${entityName}Module {}
    * Supprime une table et ses tables de jonction de la base de données
    */
   private async dropTableFromDatabase(tableName: string, relationTables: string[]): Promise<void> {
+    this.logger.warn('dropTableFromDatabase');
     const queryRunner = this.dataSource.createQueryRunner();
 
     try {
@@ -1167,18 +1592,18 @@ export class ${entityName}Module {}
       for (const relationTable of relationTables) {
         try {
           await queryRunner.query(`DROP TABLE IF EXISTS "${relationTable}" CASCADE`);
-          console.log(`Dropped junction table: ${relationTable}`);
+          this.logger.log(`Dropped junction table: ${relationTable}`);
         } catch (e) {
-          console.warn(`Failed to drop junction table ${relationTable}: ${e.message}`);
+          this.logger.warn(`Failed to drop junction table ${relationTable}: ${e.message}`);
         }
       }
 
       // Supprimer la table principale
       try {
         await queryRunner.query(`DROP TABLE IF EXISTS "${tableName}" CASCADE`);
-        console.log(`Dropped table: ${tableName}`);
+        this.logger.log(`Dropped table: ${tableName}`);
       } catch (e) {
-        console.warn(`Failed to drop table ${tableName}: ${e.message}`);
+        this.logger.warn(`Failed to drop table ${tableName}: ${e.message}`);
       }
     } finally {
       await queryRunner.release();
@@ -1192,6 +1617,7 @@ export class ${entityName}Module {}
     deletedEntityName: string,
     fields: any[],
   ): Promise<void> {
+    this.logger.warn('cleanupAllInverseRelationsOnDelete');
     // 1. Nettoyer les relations inverses que cette entité a créées sur d'autres entités
     const relationFields = fields.filter((f: any) =>
       ['many-to-one', 'one-to-many', 'many-to-many', 'one-to-one'].includes(f.type) && f.relationTarget
@@ -1214,6 +1640,7 @@ export class ${entityName}Module {}
    * Supprime toutes les références à une entité supprimée dans les autres entités
    */
   private async removeAllReferencesToEntity(deletedEntityName: string): Promise<void> {
+    this.logger.warn('removeAllReferencesToEntity');
     const entities = await this.listEntities();
 
     for (const entity of entities) {
@@ -1284,7 +1711,7 @@ export class ${entityName}Module {}
         content = content.replace(/\n{3,}/g, '\n\n');
 
         fs.writeFileSync(entityFilePath, content);
-        console.log(`Cleaned up references to ${deletedEntityName} in ${entity.name}`);
+        this.logger.log(`Cleaned up references to ${deletedEntityName} in ${entity.name}`);
       }
     }
   }
@@ -1293,6 +1720,7 @@ export class ${entityName}Module {}
     entityName: string,
     moduleName: string,
   ): Promise<void> {
+    this.logger.warn('removeFromAppModule');
     const appModulePath = path.join(this.srcPath, 'app.module.ts');
 
     if (!fs.existsSync(appModulePath)) {
@@ -1310,6 +1738,6 @@ export class ${entityName}Module {}
     content = content.replace(new RegExp(`\\s*${moduleReference}\\s*`, 'g'), '\n');
 
     fs.writeFileSync(appModulePath, content);
-    console.log(`${entityName}Module removed from app.module.ts`);
+    this.logger.log(`${entityName}Module removed from app.module.ts`);
   }
 }
