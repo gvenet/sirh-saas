@@ -12,7 +12,7 @@ export class GeneratorService {
   constructor(private http: HttpClient) {}
 
   generateEntity(entityDto: CreateEntityDto): Observable<GeneratorResponse> {
-    return this.http.post<GeneratorResponse>(`${this.apiUrl}/entity`, entityDto);
+    return this.http.post<GeneratorResponse>(`${this.apiUrl}/entities`, entityDto);
   }
 
   listEntities(): Observable<EntityInfo[]> {
@@ -21,14 +21,14 @@ export class GeneratorService {
   }
 
   getEntity(name: string): Observable<CreateEntityDto> {
-    return this.http.get<CreateEntityDto>(`${this.apiUrl}/entity/${name}`);
+    return this.http.get<CreateEntityDto>(`${this.apiUrl}/entities/${name}`);
   }
 
   updateEntity(name: string, entityDto: CreateEntityDto): Observable<GeneratorResponse> {
-    return this.http.put<GeneratorResponse>(`${this.apiUrl}/entity/${name}`, entityDto);
+    return this.http.put<GeneratorResponse>(`${this.apiUrl}/entities/${name}`, entityDto);
   }
 
   deleteEntity(name: string): Observable<{message: string}> {
-    return this.http.delete<{message: string}>(`${this.apiUrl}/entity/${name}`);
+    return this.http.delete<{message: string}>(`${this.apiUrl}/entities/${name}`);
   }
 }

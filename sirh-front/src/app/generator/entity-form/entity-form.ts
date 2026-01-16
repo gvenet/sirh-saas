@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, FormArray, Validators, ReactiveFormsModule } from '@angular/forms';
 import { Router, ActivatedRoute, RouterLink } from '@angular/router';
@@ -45,7 +45,8 @@ export class EntityFormComponent implements OnInit {
     private fb: FormBuilder,
     private generatorService: GeneratorService,
     private router: Router,
-    private route: ActivatedRoute
+    private route: ActivatedRoute,
+    private cdr: ChangeDetectorRef
   ) {
     this.entityForm = this.fb.group({
       name: ['', [Validators.required, Validators.pattern(/^[A-Z][a-zA-Z0-9]*$/)]],
@@ -134,17 +135,19 @@ export class EntityFormComponent implements OnInit {
   }
 
   getBasicFieldsIndices(): number[] {
-    return this.fields.controls
+    const indices = this.fields.controls
       .map((ctrl, idx) => ({ ctrl, idx }))
       .filter(({ ctrl }) => !isRelationType(ctrl.get('type')?.value))
       .map(({ idx }) => idx);
+    return indices;
   }
 
   getRelationFieldsIndices(): number[] {
-    return this.fields.controls
+    const indices = this.fields.controls
       .map((ctrl, idx) => ({ ctrl, idx }))
       .filter(({ ctrl }) => isRelationType(ctrl.get('type')?.value))
       .map(({ idx }) => idx);
+    return indices;
   }
 
   addField(): void {
@@ -166,6 +169,7 @@ export class EntityFormComponent implements OnInit {
     // Écouter les changements pour mettre à jour les champs automatiquement
     this.setupRelationFieldListeners(relationGroup);
     this.fields.push(relationGroup);
+    this.cdr.detectChanges();
   }
 
   private setupRelationFieldListeners(group: FormGroup): void {
@@ -245,7 +249,15 @@ export class EntityFormComponent implements OnInit {
       next: (response) => {
         this.loading = false;
         this.success = response.message;
-        this.startServerPolling();
+        const entityName = this.entityForm.get('name')?.value;
+
+        if (this.isEditMode) {
+          // Update: pas de redémarrage serveur, rediriger directement
+          this.router.navigate(['/generator/view', entityName]);
+        } else {
+          // Create: le serveur va redémarrer, attendre
+          this.startServerPolling();
+        }
       },
       error: (error) => {
         this.loading = false;
@@ -258,40 +270,42 @@ export class EntityFormComponent implements OnInit {
     this.waitingForRestart = true;
     this.restartStatus = 'waiting';
 
-    // D'abord attendre que le serveur soit DOWN (ne réponde plus)
-    this.waitForServerDown();
+    // Le serveur redémarre très vite (< 2s), donc au lieu d'essayer de détecter l'état DOWN,
+    // on attend un court délai puis on vérifie que le serveur est UP et que l'entité existe
+    setTimeout(() => {
+      this.restartStatus = 'checking';
+      this.verifyEntityExists(0);
+    }, 1000); // Attendre 2s pour laisser le temps au serveur de redémarrer
   }
 
-  private waitForServerDown(): void {
-    this.generatorService.listEntities().subscribe({
-      next: () => {
-        // Le serveur répond encore, il n'est pas encore down
-        setTimeout(() => {
-          this.waitForServerDown();
-        }, 300);
-      },
-      error: () => {
-        // Le serveur ne répond plus, il est en train de redémarrer
-        // Maintenant on attend qu'il revienne
-        this.restartStatus = 'checking';
-        this.pollServerStatus();
-      }
-    });
-  }
+  private verifyEntityExists(attempts: number): void {
+    const entityName = this.entityForm.get('name')?.value;
 
-  private pollServerStatus(): void {
-    this.generatorService.listEntities().subscribe({
-      next: () => {
-        // Le serveur répond à nouveau, il est prêt
-        this.restartStatus = 'ready';
-        setTimeout(() => {
-          this.router.navigate(['/generator/list']);
-        }, 300);
+    // Timeout après 10 tentatives (5s supplémentaires)
+    if (attempts >= 10) {
+      console.warn('Timeout waiting for entity, redirecting anyway');
+      this.restartStatus = 'ready';
+      this.router.navigate(['/generator/view', entityName]);
+      return;
+    }
+
+    this.generatorService.getEntity(entityName).subscribe({
+      next: (entity) => {
+        if (entity) {
+          // L'entité existe, le serveur est prêt
+          this.restartStatus = 'ready';
+          this.router.navigate(['/generator/view', entityName]);
+        } else {
+          // L'entité n'existe pas encore, réessayer
+          setTimeout(() => {
+            this.verifyEntityExists(attempts + 1);
+          }, 500);
+        }
       },
       error: () => {
-        // Le serveur ne répond pas encore, on réessaie
+        // Erreur (serveur pas encore prêt ou entité pas trouvée), réessayer
         setTimeout(() => {
-          this.pollServerStatus();
+          this.verifyEntityExists(attempts + 1);
         }, 500);
       }
     });

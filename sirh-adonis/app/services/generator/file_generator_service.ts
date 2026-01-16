@@ -263,4 +263,118 @@ ${optionalRules}
       .toLowerCase()
       .replace(/^_/, '')
   }
+
+  /**
+   * Generate migration content for creating a table
+   */
+  generateMigration(tableName: string, fields: FieldDefinition[]): string {
+    const columns = fields
+      .filter((f) => !f.relation || f.relation.type === 'many-to-one')
+      .map((field) => this.getMigrationColumn(field))
+      .join('\n      ')
+
+    const foreignKeys = fields
+      .filter((f) => f.relation?.type === 'many-to-one')
+      .map((field) => {
+        const targetTable = this.toSnakeCase(field.relation!.target) + 's'
+        const columnName = this.toSnakeCase(field.name) + '_id'
+        return `table.foreign('${columnName}').references('id').inTable('${targetTable}').onDelete('SET NULL')`
+      })
+      .join('\n      ')
+
+    return `import { BaseSchema } from '@adonisjs/lucid/schema'
+
+export default class extends BaseSchema {
+  protected tableName = '${tableName}'
+
+  async up() {
+    this.schema.createTable(this.tableName, (table) => {
+      table.increments('id')
+      ${columns}
+      table.timestamp('created_at')
+      table.timestamp('updated_at')
+      ${foreignKeys}
+    })
+  }
+
+  async down() {
+    this.schema.dropTable(this.tableName)
+  }
+}
+`
+  }
+
+  /**
+   * Generate migration content for dropping a table
+   */
+  generateDropMigration(tableName: string): string {
+    return `import { BaseSchema } from '@adonisjs/lucid/schema'
+
+export default class extends BaseSchema {
+  protected tableName = '${tableName}'
+
+  async up() {
+    this.schema.dropTable(this.tableName)
+  }
+
+  async down() {
+    // Cannot restore table without knowing original schema
+  }
+}
+`
+  }
+
+  private getMigrationColumn(field: FieldDefinition): string {
+    const columnName = field.relation?.type === 'many-to-one'
+      ? this.toSnakeCase(field.name) + '_id'
+      : this.toSnakeCase(field.name)
+
+    let columnDef: string
+
+    if (field.relation?.type === 'many-to-one') {
+      columnDef = `table.integer('${columnName}').unsigned()`
+    } else {
+      switch (field.type) {
+        case 'string':
+          columnDef = `table.string('${columnName}', 255)`
+          break
+        case 'text':
+          columnDef = `table.text('${columnName}')`
+          break
+        case 'number':
+        case 'integer':
+          columnDef = `table.integer('${columnName}')`
+          break
+        case 'float':
+          columnDef = `table.decimal('${columnName}', 10, 2)`
+          break
+        case 'boolean':
+          columnDef = `table.boolean('${columnName}').defaultTo(false)`
+          break
+        case 'date':
+          columnDef = `table.date('${columnName}')`
+          break
+        case 'datetime':
+          columnDef = `table.timestamp('${columnName}')`
+          break
+        case 'json':
+          columnDef = `table.jsonb('${columnName}')`
+          break
+        default:
+          columnDef = `table.string('${columnName}', 255)`
+      }
+    }
+
+    if (field.required === true) {
+      columnDef += '.notNullable()'
+    } else {
+      columnDef += '.nullable()'
+    }
+
+    if (field.unique) {
+      columnDef += '.unique()'
+    }
+
+    return columnDef
+  }
 }

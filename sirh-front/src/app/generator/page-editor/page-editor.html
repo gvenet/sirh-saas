@@ -18,7 +18,29 @@
             <span>{{ page.name }}</span>
             <span class="page-entity-badge">{{ page.entityName }}</span>
           }
+          @if (hasChanges) {
+            <span class="unsaved-badge">Modifications non sauvegardées</span>
+          }
         </div>
+      </div>
+
+      <div class="subnav-right">
+        @if (hasChanges) {
+          <button class="btn btn-secondary" (click)="cancelChanges()" [disabled]="saving">
+            Annuler
+          </button>
+          <button class="btn btn-primary" (click)="saveAllChanges()" [disabled]="saving">
+            @if (saving) {
+              <span class="spinner-small"></span>
+              Sauvegarde...
+            } @else {
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+              </svg>
+              Mettre à jour
+            }
+          </button>
+        }
       </div>
     </div>
   </nav>
@@ -34,6 +56,13 @@
     @if (error) {
       <div class="alert alert-error">
         {{ error }}
+        <button class="alert-close" (click)="error = null">×</button>
+      </div>
+    }
+
+    @if (successMessage) {
+      <div class="alert alert-success">
+        {{ successMessage }}
       </div>
     }
 
@@ -102,9 +131,10 @@
               </div>
             }
 
-            @for (field of configuredFields; track field.id) {
+            @for (field of configuredFields; track field.fieldName) {
               <div
                 class="configured-field"
+                [class.is-new]="field.isNew"
                 [style.--col-span]="field.colSpan"
                 cdkDrag
                 (click)="openFieldConfig(field)">
@@ -123,6 +153,9 @@
                   <div class="field-meta">
                     <span class="field-name-small">{{ field.fieldName }}</span>
                     <span class="display-type-badge">{{ getDisplayTypeLabel(field.displayType) }}</span>
+                    @if (field.isNew) {
+                      <span class="new-badge">Nouveau</span>
+                    }
                   </div>
                 </div>
 
@@ -207,7 +240,7 @@
         <div class="modal-footer">
           <button class="btn btn-secondary" (click)="closeFieldModal()">Annuler</button>
           <button class="btn btn-primary" (click)="saveFieldConfig()">
-            Enregistrer
+            Appliquer
           </button>
         </div>
       </div>

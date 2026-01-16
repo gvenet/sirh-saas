@@ -27,5 +27,18 @@ export default await Env.create(new URL('../', import.meta.url), {
   DB_PORT: Env.schema.number(),
   DB_USER: Env.schema.string(),
   DB_PASSWORD: Env.schema.string.optional(),
-  DB_DATABASE: Env.schema.string()
+  DB_DATABASE: Env.schema.string(),
+
+  /*
+  |----------------------------------------------------------
+  | Variables for configuring mail
+  |----------------------------------------------------------
+  */
+  MAIL_HOST: Env.schema.string.optional(),
+  MAIL_PORT: Env.schema.number.optional(),
+  MAIL_SECURE: Env.schema.boolean.optional(),
+  MAIL_USER: Env.schema.string.optional(),
+  MAIL_PASSWORD: Env.schema.string.optional(),
+  MAIL_FROM: Env.schema.string.optional(),
+  FRONTEND_URL: Env.schema.string.optional(),
 })

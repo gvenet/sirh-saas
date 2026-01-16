@@ -17,6 +17,18 @@ interface AvailableField {
   relationType?: string;
 }
 
+interface LocalField extends Partial<PageField> {
+  id?: string;
+  fieldName: string;
+  label: string;
+  displayType: FieldDisplayType;
+  order: number;
+  colSpan: number;
+  readOnly: boolean;
+  fieldPath?: string;
+  isNew?: boolean; // true si le champ n'existe pas encore en BDD
+}
+
 @Component({
   selector: 'app-page-editor',
   imports: [CommonModule, FormsModule, DragDropModule, AdminNavbarComponent],
@@ -29,15 +41,21 @@ export class PageEditorComponent implements OnInit {
   loading = true;
   saving = false;
   error: string | null = null;
+  successMessage: string | null = null;
 
   // Champs disponibles (non encore ajoutés à la page)
   availableFields: AvailableField[] = [];
-  // Champs configurés sur la page
-  configuredFields: PageField[] = [];
+  // Champs configurés sur la page (copie locale modifiable)
+  configuredFields: LocalField[] = [];
+  // État original pour détecter les changements
+  originalFields: LocalField[] = [];
+
+  // Indicateur de modifications non sauvegardées
+  hasChanges = false;
 
   // Modal de configuration d'un champ
   showFieldModal = false;
-  editingField: PageField | null = null;
+  editingField: LocalField | null = null;
   fieldForm: Partial<CreatePageFieldDto> = {};
   FieldDisplayType = FieldDisplayType;
 
@@ -76,7 +94,16 @@ export class PageEditorComponent implements OnInit {
     this.entityPageService.getOne(id).subscribe({
       next: (page) => {
         this.page = page;
-        this.configuredFields = [...page.fields].sort((a, b) => a.order - b.order);
+        // Convertir en LocalField
+        this.configuredFields = page.fields
+          .map(f => ({
+            ...f,
+            isNew: false
+          }))
+          .sort((a, b) => a.order - b.order);
+        // Garder une copie de l'état original
+        this.originalFields = JSON.parse(JSON.stringify(this.configuredFields));
+        this.hasChanges = false;
         this.loadEntityFields(page.entityName);
       },
       error: (error) => {
@@ -120,93 +147,139 @@ export class PageEditorComponent implements OnInit {
     if (event.previousContainer === event.container) {
       // Réordonner dans la même liste
       moveItemInArray(this.configuredFields, event.previousIndex, event.currentIndex);
-      this.updateFieldsOrder();
+      this.updateLocalOrder();
     } else {
       // Ajouter un nouveau champ depuis les disponibles
       const availableField = this.availableFields[event.previousIndex];
-      this.addFieldToPage(availableField, event.currentIndex);
+      this.addFieldLocally(availableField, event.currentIndex);
     }
+    this.markAsChanged();
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dropInAvailable(event: CdkDragDrop<any>): void {
     if (event.previousContainer !== event.container) {
-      // Retirer un champ de la page
+      // Retirer un champ de la page (localement)
       const field = this.configuredFields[event.previousIndex];
-      this.removeFieldFromPage(field);
+      this.removeFieldLocally(field);
+      this.markAsChanged();
     }
   }
 
-  addFieldToPage(availableField: AvailableField, index: number): void {
+  addFieldLocally(availableField: AvailableField, index: number): void {
     if (!this.page) return;
 
     const displayType = this.getDefaultDisplayType(availableField);
-    const dto: CreatePageFieldDto = {
+    const newField: LocalField = {
       fieldName: availableField.name,
       fieldPath: availableField.isRelation ? availableField.name : undefined,
       displayType: displayType,
       label: this.formatLabel(availableField.name),
       order: index,
       colSpan: 6,
-      readOnly: this.page.pageType === 'view'
+      readOnly: this.page.pageType === 'view',
+      isNew: true
     };
 
-    this.entityPageService.addField(this.page.id, dto).subscribe({
-      next: (field) => {
-        // Ajouter à la position correcte
-        this.configuredFields.splice(index, 0, field);
-        // Retirer des disponibles
-        this.availableFields = this.availableFields.filter(f => f.name !== availableField.name);
-        // Mettre à jour l'ordre
-        this.updateFieldsOrder();
+    // Ajouter à la position correcte
+    this.configuredFields.splice(index, 0, newField);
+    // Retirer des disponibles
+    this.availableFields = this.availableFields.filter(f => f.name !== availableField.name);
+    // Mettre à jour l'ordre
+    this.updateLocalOrder();
+    this.cdr.detectChanges();
+  }
+
+  removeFieldLocally(field: LocalField): void {
+    // Retirer de la liste configurée
+    this.configuredFields = this.configuredFields.filter(f =>
+      f.id ? f.id !== field.id : f.fieldName !== field.fieldName
+    );
+    // Remettre dans les disponibles
+    this.availableFields.push({
+      name: field.fieldName,
+      type: 'string',
+      isRelation: !!field.fieldPath,
+      relationTarget: undefined,
+      relationType: undefined
+    });
+    this.cdr.detectChanges();
+  }
+
+  updateLocalOrder(): void {
+    this.configuredFields.forEach((field, index) => {
+      field.order = index;
+    });
+  }
+
+  markAsChanged(): void {
+    this.hasChanges = true;
+    this.successMessage = null;
+  }
+
+  // Sauvegarder tous les changements
+  saveAllChanges(): void {
+    if (!this.page || !this.hasChanges) return;
+
+    this.saving = true;
+    this.error = null;
+    this.successMessage = null;
+
+    // Préparer les données pour la mise à jour bulk
+    const fieldsData = this.configuredFields.map(f => ({
+      id: f.isNew ? undefined : f.id,
+      fieldName: f.fieldName,
+      fieldPath: f.fieldPath,
+      displayType: f.displayType,
+      label: f.label,
+      order: f.order,
+      colSpan: f.colSpan,
+      readOnly: f.readOnly
+    }));
+
+    // Utiliser updateFields qui remplace tous les champs
+    this.entityPageService.updateFields(this.page.id, fieldsData).subscribe({
+      next: (updatedPage) => {
+        this.saving = false;
+        this.hasChanges = false;
+        this.successMessage = 'Page mise à jour avec succès';
+        // Mettre à jour avec les données du serveur
+        this.configuredFields = updatedPage.fields
+          .map(f => ({ ...f, isNew: false }))
+          .sort((a, b) => a.order - b.order);
+        this.originalFields = JSON.parse(JSON.stringify(this.configuredFields));
         this.cdr.detectChanges();
+
+        // Masquer le message après 3s
+        setTimeout(() => {
+          this.successMessage = null;
+          this.cdr.detectChanges();
+        }, 3000);
       },
       error: (error) => {
-        this.error = `Erreur lors de l'ajout du champ: ${error.error?.message || error.message}`;
+        this.saving = false;
+        this.error = `Erreur lors de la sauvegarde: ${error.error?.message || error.message}`;
+        this.cdr.detectChanges();
       }
     });
   }
 
-  removeFieldFromPage(field: PageField): void {
-    this.entityPageService.deleteField(field.id).subscribe({
-      next: () => {
-        // Retirer de la liste configurée
-        this.configuredFields = this.configuredFields.filter(f => f.id !== field.id);
-        // Remettre dans les disponibles
-        this.availableFields.push({
-          name: field.fieldName,
-          type: 'string', // Type par défaut, sera rechargé
-          isRelation: !!field.fieldPath,
-          relationTarget: undefined,
-          relationType: undefined
-        });
-        this.cdr.detectChanges();
-      },
-      error: (error) => {
-        this.error = `Erreur lors de la suppression: ${error.error?.message || error.message}`;
-      }
-    });
-  }
+  // Annuler les modifications
+  cancelChanges(): void {
+    if (!this.hasChanges) return;
 
-  updateFieldsOrder(): void {
-    if (!this.page) return;
-
-    const fieldIds = this.configuredFields.map(f => f.id);
-    this.entityPageService.reorderFields(this.page.id, fieldIds).subscribe({
-      next: () => {
-        // Mettre à jour l'ordre local
-        this.configuredFields.forEach((field, index) => {
-          field.order = index;
-        });
-      },
-      error: (error) => {
-        this.error = `Erreur lors de la réorganisation: ${error.error?.message || error.message}`;
-      }
-    });
+    // Restaurer l'état original
+    this.configuredFields = JSON.parse(JSON.stringify(this.originalFields));
+    // Recharger les champs disponibles
+    if (this.page) {
+      this.loadEntityFields(this.page.entityName);
+    }
+    this.hasChanges = false;
+    this.cdr.detectChanges();
   }
 
   // Configuration d'un champ
-  openFieldConfig(field: PageField): void {
+  openFieldConfig(field: LocalField): void {
     this.editingField = field;
     this.fieldForm = {
       label: field.label,
@@ -226,20 +299,24 @@ export class PageEditorComponent implements OnInit {
   saveFieldConfig(): void {
     if (!this.editingField) return;
 
-    this.entityPageService.updateField(this.editingField.id, this.fieldForm).subscribe({
-      next: (updatedField) => {
-        // Mettre à jour le champ dans la liste
-        const index = this.configuredFields.findIndex(f => f.id === this.editingField!.id);
-        if (index !== -1) {
-          this.configuredFields[index] = updatedField;
-        }
-        this.closeFieldModal();
-        this.cdr.detectChanges();
-      },
-      error: (error) => {
-        this.error = `Erreur lors de la mise à jour: ${error.error?.message || error.message}`;
-      }
-    });
+    // Mettre à jour localement
+    const index = this.configuredFields.findIndex(f =>
+      f.id ? f.id === this.editingField!.id : f.fieldName === this.editingField!.fieldName
+    );
+
+    if (index !== -1) {
+      this.configuredFields[index] = {
+        ...this.configuredFields[index],
+        label: this.fieldForm.label || this.configuredFields[index].label,
+        displayType: this.fieldForm.displayType || this.configuredFields[index].displayType,
+        colSpan: this.fieldForm.colSpan ?? this.configuredFields[index].colSpan,
+        readOnly: this.fieldForm.readOnly ?? this.configuredFields[index].readOnly
+      };
+    }
+
+    this.markAsChanged();
+    this.closeFieldModal();
+    this.cdr.detectChanges();
   }
 
   // Helpers
@@ -293,6 +370,12 @@ export class PageEditorComponent implements OnInit {
   }
 
   goBack(): void {
+    if (this.hasChanges) {
+      if (!confirm('Vous avez des modifications non sauvegardées. Voulez-vous vraiment quitter ?')) {
+        return;
+      }
+    }
+
     if (this.page) {
       this.router.navigate(['/generator/view', this.page.entityName]);
     } else {

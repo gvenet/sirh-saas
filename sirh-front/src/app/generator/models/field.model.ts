@@ -27,13 +27,10 @@ export interface Field {
   eager?: boolean;                // Charger automatiquement la relation
 }
 
-export function isRelationType(type: FieldType): boolean {
-  return [
-    FieldType.MANY_TO_ONE,
-    FieldType.ONE_TO_MANY,
-    FieldType.MANY_TO_MANY,
-    FieldType.ONE_TO_ONE
-  ].includes(type);
+export function isRelationType(type: FieldType | string | null | undefined): boolean {
+  if (!type) return false;
+  const relationTypeStrings = ['many-to-one', 'one-to-many', 'many-to-many', 'one-to-one'];
+  return relationTypeStrings.includes(type);
 }
 
 export interface IncomingRelation {

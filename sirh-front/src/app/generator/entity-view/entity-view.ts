@@ -19,6 +19,7 @@ export class EntityViewComponent implements OnInit {
   entityName: string = '';
   loading = true;
   error: string | null = null;
+  deleting = false;
 
   // Onglets
   activeTab: 'schema' | 'pages' = 'schema';
@@ -112,12 +113,52 @@ export class EntityViewComponent implements OnInit {
       return;
     }
 
+    this.deleting = true;
+    this.error = null;
+    this.cdr.detectChanges();
+
     this.generatorService.deleteEntity(this.entityName).subscribe({
       next: () => {
-        this.router.navigate(['/generator/list']);
+        // La suppression modifie routes.ts via setImmediate côté serveur
+        // Le serveur redémarre après avoir envoyé la réponse
+        // On attend 2s puis on vérifie que le serveur est prêt
+        setTimeout(() => {
+          this.waitForServerReady(0);
+        }, 2000);
       },
       error: (error) => {
+        this.deleting = false;
         this.error = `Erreur lors de la suppression: ${error.error?.message || error.message}`;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private waitForServerReady(attempts: number): void {
+    // Timeout après 10 tentatives (5s supplémentaires)
+    if (attempts >= 10) {
+      console.warn('Timeout waiting for server, redirecting anyway');
+      this.router.navigate(['/generator/list']);
+      return;
+    }
+
+    this.generatorService.listEntities().subscribe({
+      next: (entities) => {
+        // Le serveur répond avec des données valides, on peut rediriger
+        if (Array.isArray(entities)) {
+          this.router.navigate(['/generator/list']);
+        } else {
+          // Réponse invalide, réessayer
+          setTimeout(() => {
+            this.waitForServerReady(attempts + 1);
+          }, 500);
+        }
+      },
+      error: () => {
+        // Le serveur ne répond pas encore, réessayer
+        setTimeout(() => {
+          this.waitForServerReady(attempts + 1);
+        }, 500);
       }
     });
   }

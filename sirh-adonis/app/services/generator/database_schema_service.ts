@@ -15,12 +15,14 @@ export default class DatabaseSchemaService {
     const columns = fields
       .filter((f) => !f.relation || f.relation.type === 'many-to-one')
       .map((field) => this.getColumnDefinition(field))
-      .join(',\n      ')
+      .join(',\n        ')
+
+    const columnsPart = columns ? `${columns},` : ''
 
     const sql = `
       CREATE TABLE "${tableName}" (
         "id" SERIAL PRIMARY KEY,
-        ${columns},
+        ${columnsPart}
         "created_at" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
@@ -83,7 +85,7 @@ export default class DatabaseSchemaService {
       SELECT EXISTS (
         SELECT FROM information_schema.tables
         WHERE table_schema = 'public'
-        AND table_name = $1
+        AND table_name = ?
       )
     `, [tableName])
 

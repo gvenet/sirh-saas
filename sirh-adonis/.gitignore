@@ -23,3 +23,6 @@ yarn-error.log
 
 # Platform specific
 .DS_Store
+
+# Generated migrations (keep system migrations with 1768* prefix)
+database/migrations/2026*.ts

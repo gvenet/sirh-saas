@@ -16,6 +16,7 @@ export class EntityListComponent implements OnInit {
   entities: EntityInfo[] = [];
   loading = true;
   error: string | null = null;
+  deleting: string | null = null; // nom de l'entité en cours de suppression
 
   constructor(
     private generatorService: GeneratorService,
@@ -55,12 +56,55 @@ export class EntityListComponent implements OnInit {
       return;
     }
 
+    this.deleting = entityName;
+    this.error = null;
+    this.cdr.detectChanges();
+
     this.generatorService.deleteEntity(entityName).subscribe({
       next: () => {
-        this.loadEntities();
+        // La suppression modifie routes.ts, ce qui déclenche un redémarrage du serveur
+        // On attend 2s puis on vérifie que le serveur est prêt
+        setTimeout(() => {
+          this.waitForServerAndReload(0);
+        }, 1000);
       },
       error: (error) => {
+        this.deleting = null;
         this.error = `Failed to delete entity: ${error.error?.message || error.message}`;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private waitForServerAndReload(attempts: number): void {
+    // Timeout après 10 tentatives (5s supplémentaires)
+    if (attempts >= 10) {
+      console.warn('Timeout waiting for server, reloading anyway');
+      this.deleting = null;
+      this.loadEntities();
+      return;
+    }
+
+    this.generatorService.listEntities().subscribe({
+      next: (entities) => {
+        // Le serveur répond avec des données valides
+        if (Array.isArray(entities)) {
+          this.deleting = null;
+          this.entities = entities;
+          this.loading = false;
+          this.cdr.detectChanges();
+        } else {
+          // Réponse invalide, réessayer
+          setTimeout(() => {
+            this.waitForServerAndReload(attempts + 1);
+          }, 500);
+        }
+      },
+      error: () => {
+        // Le serveur ne répond pas encore, réessayer
+        setTimeout(() => {
+          this.waitForServerAndReload(attempts + 1);
+        }, 500);
       }
     });
   }

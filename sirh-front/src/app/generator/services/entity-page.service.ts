@@ -16,7 +16,7 @@ export class EntityPageService {
   }
 
   getByEntity(entityName: string): Observable<EntityPage[]> {
-    return this.http.get<EntityPage[]>(`${this.apiUrl}?entityName=${entityName}`);
+    return this.http.get<EntityPage[]>(`${this.apiUrl}/${entityName}/pages`);
   }
 
   getDefaultPage(entityName: string, pageType: PageType): Observable<EntityPage | null> {
@@ -24,7 +24,7 @@ export class EntityPageService {
   }
 
   getOne(id: string): Observable<EntityPage> {
-    return this.http.get<EntityPage>(`${this.apiUrl}/${id}`);
+    return this.http.get<EntityPage>(`${this.apiUrl}/pages/${id}`);
   }
 
   create(dto: CreateEntityPageDto): Observable<EntityPage> {
@@ -32,7 +32,7 @@ export class EntityPageService {
   }
 
   update(id: string, dto: Partial<CreateEntityPageDto>): Observable<EntityPage> {
-    return this.http.put<EntityPage>(`${this.apiUrl}/${id}`, dto);
+    return this.http.put<EntityPage>(`${this.apiUrl}/pages/${id}`, dto);
   }
 
   delete(id: string): Observable<void> {
@@ -54,5 +54,9 @@ export class EntityPageService {
 
   reorderFields(pageId: string, fieldIds: string[]): Observable<void> {
     return this.http.put<void>(`${this.apiUrl}/${pageId}/fields/reorder`, { fieldIds });
+  }
+
+  updateFields(pageId: string, fields: Partial<CreatePageFieldDto>[]): Observable<EntityPage> {
+    return this.http.put<EntityPage>(`${this.apiUrl}/pages/${pageId}/fields`, { fields });
   }
 }
