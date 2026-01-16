@@ -47,7 +47,7 @@ dev-front:
 dev-back:
 	@echo "🟢 Démarrage du backend NestJS..."
 	lsof -ti:3000 | xargs -r kill -9 && sleep 3 && lsof -ti:3000 && echo "Port still in use" || echo "Port 3000 is now free"
-	cd sirh-back && npm run start:dev
+	cd sirh-back && npm run dev
 
 dev-all:
 	@echo "🚀 Démarrage de tous les services..."
