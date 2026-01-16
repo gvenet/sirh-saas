@@ -8,7 +8,6 @@ import { UsersModule } from './users/users.module';
 import { GeneratorModule } from './generator/generator.module';
 import { ApplicationModule } from './application/application.module';
 import { EntityPageModule } from './entity-page/entity-page.module';
-import { AaaModule } from './entities/aaa/aaa.module';
 
 @Module({
   imports: [
@@ -38,8 +37,7 @@ import { AaaModule } from './entities/aaa/aaa.module';
     GeneratorModule,
     ApplicationModule,
     EntityPageModule,
-
-    AaaModule,],
+],
   controllers: [AppController],
   providers: [AppService],
 })
