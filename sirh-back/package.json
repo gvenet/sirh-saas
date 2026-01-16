@@ -18,8 +18,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "watch:files": "node tools/dev-watcher.js",
-    "dev": "npm-run-all --parallel watch:files start:dev"
+    "dev": "node tools/dev-runner.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -65,6 +64,7 @@
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
+    "tree-kill": "^1.2.2",
     "ts-jest": "^29.2.5",
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",

@@ -1,6 +1,7 @@
-import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { FieldDto, FieldType, isRelationType } from '../dto/field.dto';
 import { DatabaseSchemaService } from './database-schema.service';
+import { FileToWrite } from './file-writer.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -13,11 +14,15 @@ export class RelationService {
     private readonly databaseSchemaService: DatabaseSchemaService,
   ) {}
 
-  async addInverseRelationsToTargetEntities(
+  /**
+   * Collecte les fichiers à modifier pour les relations inverses (sans écrire)
+   */
+  async collectInverseRelationFiles(
     sourceEntityName: string,
     fields: FieldDto[],
-  ): Promise<void> {
-    this.logger.warn('addInverseRelationsToTargetEntities');
+  ): Promise<FileToWrite[]> {
+    this.logger.warn('collectInverseRelationFiles');
+    const filesToWrite: FileToWrite[] = [];
     const relationFields = fields.filter(f => isRelationType(f.type) && f.relationTarget);
 
     for (const field of relationFields) {
@@ -71,9 +76,164 @@ export class RelationService {
           targetContent.slice(lastBraceIndex);
       }
 
-      fs.writeFileSync(targetEntityPath, targetContent);
-      this.logger.log(`Added inverse relation ${inversePropertyName} to ${targetEntityName}`);
+      filesToWrite.push({ path: targetEntityPath, content: targetContent });
+      this.logger.log(`Prepared inverse relation ${inversePropertyName} for ${targetEntityName}`);
     }
+
+    return filesToWrite;
+  }
+
+  /**
+   * Collecte les fichiers à modifier lors de la suppression d'une entité (sans écrire)
+   */
+  async collectCleanupFiles(
+    deletedEntityName: string,
+    fields: any[],
+    listEntitiesFn: () => Promise<Array<{ name: string; moduleName: string; path: string }>>,
+  ): Promise<FileToWrite[]> {
+    this.logger.warn('collectCleanupFiles');
+    const filesToWrite: FileToWrite[] = [];
+
+    // 1. Nettoyer les relations inverses
+    const relationFields = fields.filter((f: any) =>
+      ['many-to-one', 'one-to-many', 'many-to-many', 'one-to-one'].includes(f.type) && f.relationTarget
+    );
+
+    for (const rel of relationFields) {
+      const inversePropertyName = rel.relationInverse || deletedEntityName.toLowerCase() + 's';
+      const cleanedContent = this.prepareRemoveInverseRelation(
+        deletedEntityName,
+        rel.relationTarget,
+        inversePropertyName,
+      );
+      if (cleanedContent) {
+        filesToWrite.push(cleanedContent);
+      }
+    }
+
+    // 2. Nettoyer les références dans toutes les autres entités
+    const entities = await listEntitiesFn();
+
+    for (const entity of entities) {
+      if (entity.name === deletedEntityName) continue;
+
+      const entityFilePath = path.join(entity.path, `${entity.moduleName}.entity.ts`);
+      if (!fs.existsSync(entityFilePath)) continue;
+
+      // Vérifier si ce fichier n'a pas déjà été modifié
+      const alreadyModified = filesToWrite.find(f => f.path === entityFilePath);
+      let content = alreadyModified ? alreadyModified.content : fs.readFileSync(entityFilePath, 'utf-8');
+      let modified = !!alreadyModified;
+
+      const importRegex = new RegExp(
+        `import \\{ ${deletedEntityName} \\} from '\\.\\./${deletedEntityName.toLowerCase()}/${deletedEntityName.toLowerCase()}\\.entity';\\n?`,
+        'g'
+      );
+      if (importRegex.test(content)) {
+        content = content.replace(importRegex, '');
+        modified = true;
+      }
+
+      const relationPatterns = [
+        new RegExp(
+          `\\s*@ManyToOne\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*@JoinColumn\\([^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName};`,
+          'g'
+        ),
+        new RegExp(
+          `\\s*@OneToMany\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName}\\[\\];`,
+          'g'
+        ),
+        new RegExp(
+          `\\s*@ManyToMany\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*@JoinTable\\([^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName}\\[\\];`,
+          'g'
+        ),
+        new RegExp(
+          `\\s*@ManyToMany\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName}\\[\\];`,
+          'g'
+        ),
+        new RegExp(
+          `\\s*@OneToOne\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*@JoinColumn\\([^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName};`,
+          'g'
+        ),
+        new RegExp(
+          `\\s*@OneToOne\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName};`,
+          'g'
+        ),
+      ];
+
+      for (const pattern of relationPatterns) {
+        if (pattern.test(content)) {
+          content = content.replace(pattern, '');
+          modified = true;
+        }
+      }
+
+      if (modified) {
+        content = this.cleanupUnusedTypeOrmImports(content);
+        content = content.replace(/\n{3,}/g, '\n\n');
+
+        // Mettre à jour ou ajouter le fichier
+        const existingIndex = filesToWrite.findIndex(f => f.path === entityFilePath);
+        if (existingIndex >= 0) {
+          filesToWrite[existingIndex].content = content;
+        } else {
+          filesToWrite.push({ path: entityFilePath, content });
+        }
+        this.logger.log(`Prepared cleanup for ${entity.name}`);
+      }
+    }
+
+    return filesToWrite;
+  }
+
+  /**
+   * Prépare le contenu nettoyé d'une relation inverse (sans écrire)
+   */
+  private prepareRemoveInverseRelation(
+    sourceEntityName: string,
+    targetEntityName: string,
+    inversePropertyName: string,
+  ): FileToWrite | null {
+    const targetModuleName = targetEntityName.toLowerCase();
+    const targetEntityPath = path.join(this.entitiesPath, targetModuleName, `${targetModuleName}.entity.ts`);
+
+    if (!fs.existsSync(targetEntityPath)) {
+      return null;
+    }
+
+    let content = fs.readFileSync(targetEntityPath, 'utf-8');
+
+    const sourceImport = `import { ${sourceEntityName} } from '../${sourceEntityName.toLowerCase()}/${sourceEntityName.toLowerCase()}.entity';\n`;
+
+    const relationPatterns = [
+      new RegExp(`\\s*@ManyToMany\\(\\(\\)\\s*=>\\s*${sourceEntityName}[^)]*\\)\\s*\\n?\\s*${inversePropertyName}:\\s*${sourceEntityName}\\[\\];`, 'g'),
+      new RegExp(`\\s*@OneToMany\\(\\(\\)\\s*=>\\s*${sourceEntityName}[^)]*\\)\\s*\\n?\\s*${inversePropertyName}:\\s*${sourceEntityName}\\[\\];`, 'g'),
+      new RegExp(`\\s*@ManyToOne\\(\\(\\)\\s*=>\\s*${sourceEntityName}[^)]*\\)\\s*\\n?\\s*@JoinColumn\\([^)]*\\)\\s*\\n?\\s*${inversePropertyName}:\\s*${sourceEntityName};`, 'g'),
+      new RegExp(`\\s*@OneToOne\\(\\(\\)\\s*=>\\s*${sourceEntityName}[^)]*\\)\\s*\\n?\\s*${inversePropertyName}:\\s*${sourceEntityName};`, 'g'),
+    ];
+
+    let modified = false;
+    for (const pattern of relationPatterns) {
+      if (pattern.test(content)) {
+        content = content.replace(pattern, '');
+        modified = true;
+        break;
+      }
+    }
+
+    if (modified) {
+      const sourceEntityUsage = new RegExp(`${sourceEntityName}(?![a-zA-Z])`, 'g');
+      const matches = content.match(sourceEntityUsage);
+
+      if (!matches || matches.length <= 1) {
+        content = content.replace(sourceImport, '');
+        content = this.cleanupUnusedTypeOrmImports(content);
+      }
+
+      return { path: targetEntityPath, content };
+    }
+
+    return null;
   }
 
   private getInverseRelationCode(
@@ -137,6 +297,30 @@ export class RelationService {
     return content;
   }
 
+  cleanupUnusedTypeOrmImports(content: string): string {
+    const typeOrmImportMatch = content.match(/import \{ ([^}]+) \} from 'typeorm';/);
+    if (!typeOrmImportMatch) return content;
+
+    const imports = typeOrmImportMatch[1].split(',').map(i => i.trim());
+    const usedImports = imports.filter(imp => {
+      const restOfContent = content.replace(typeOrmImportMatch[0], '');
+      return restOfContent.includes(`@${imp}`) || restOfContent.includes(imp + '(');
+    });
+
+    if (usedImports.length === 0) {
+      return content.replace(typeOrmImportMatch[0] + '\n', '');
+    }
+
+    if (usedImports.length < imports.length) {
+      return content.replace(
+        typeOrmImportMatch[0],
+        `import { ${usedImports.join(', ')} } from 'typeorm';`
+      );
+    }
+
+    return content;
+  }
+
   async cleanupRemovedColumns(
     tableName: string,
     oldFields: any[],
@@ -194,183 +378,7 @@ export class RelationService {
     newRelations: FieldDto[],
   ): Promise<void> {
     this.logger.warn('cleanupOrphanedInverseRelations');
-    for (const oldRel of oldRelations) {
-      const stillExists = newRelations.some(
-        newRel =>
-          newRel.name === oldRel.name &&
-          newRel.relationTarget === oldRel.relationTarget
-      );
-
-      if (!stillExists && oldRel.relationTarget) {
-        await this.removeInverseRelationFromTargetEntity(
-          sourceEntityName,
-          oldRel.relationTarget,
-          oldRel.relationInverse || sourceEntityName.toLowerCase() + 's',
-        );
-      }
-    }
-  }
-
-  async removeInverseRelationFromTargetEntity(
-    sourceEntityName: string,
-    targetEntityName: string,
-    inversePropertyName: string,
-  ): Promise<void> {
-    this.logger.warn('removeInverseRelationFromTargetEntity');
-    const targetModuleName = targetEntityName.toLowerCase();
-    const targetEntityPath = path.join(this.entitiesPath, targetModuleName, `${targetModuleName}.entity.ts`);
-
-    if (!fs.existsSync(targetEntityPath)) {
-      return;
-    }
-
-    let content = fs.readFileSync(targetEntityPath, 'utf-8');
-
-    const sourceImport = `import { ${sourceEntityName} } from '../${sourceEntityName.toLowerCase()}/${sourceEntityName.toLowerCase()}.entity';\n`;
-
-    const relationPatterns = [
-      new RegExp(`\\s*@ManyToMany\\(\\(\\)\\s*=>\\s*${sourceEntityName}[^)]*\\)\\s*\\n?\\s*${inversePropertyName}:\\s*${sourceEntityName}\\[\\];`, 'g'),
-      new RegExp(`\\s*@OneToMany\\(\\(\\)\\s*=>\\s*${sourceEntityName}[^)]*\\)\\s*\\n?\\s*${inversePropertyName}:\\s*${sourceEntityName}\\[\\];`, 'g'),
-      new RegExp(`\\s*@ManyToOne\\(\\(\\)\\s*=>\\s*${sourceEntityName}[^)]*\\)\\s*\\n?\\s*@JoinColumn\\([^)]*\\)\\s*\\n?\\s*${inversePropertyName}:\\s*${sourceEntityName};`, 'g'),
-      new RegExp(`\\s*@OneToOne\\(\\(\\)\\s*=>\\s*${sourceEntityName}[^)]*\\)\\s*\\n?\\s*${inversePropertyName}:\\s*${sourceEntityName};`, 'g'),
-    ];
-
-    let modified = false;
-    for (const pattern of relationPatterns) {
-      if (pattern.test(content)) {
-        content = content.replace(pattern, '');
-        modified = true;
-        break;
-      }
-    }
-
-    if (modified) {
-      const sourceEntityUsage = new RegExp(`${sourceEntityName}(?![a-zA-Z])`, 'g');
-      const matches = content.match(sourceEntityUsage);
-
-      if (!matches || matches.length <= 1) {
-        content = content.replace(sourceImport, '');
-        content = this.cleanupUnusedTypeOrmImports(content);
-      }
-
-      fs.writeFileSync(targetEntityPath, content);
-      this.logger.log(`Removed inverse relation ${inversePropertyName} from ${targetEntityName}`);
-    }
-  }
-
-  cleanupUnusedTypeOrmImports(content: string): string {
-    const typeOrmImportMatch = content.match(/import \{ ([^}]+) \} from 'typeorm';/);
-    if (!typeOrmImportMatch) return content;
-
-    const imports = typeOrmImportMatch[1].split(',').map(i => i.trim());
-    const usedImports = imports.filter(imp => {
-      const restOfContent = content.replace(typeOrmImportMatch[0], '');
-      return restOfContent.includes(`@${imp}`) || restOfContent.includes(imp + '(');
-    });
-
-    if (usedImports.length === 0) {
-      return content.replace(typeOrmImportMatch[0] + '\n', '');
-    }
-
-    if (usedImports.length < imports.length) {
-      return content.replace(
-        typeOrmImportMatch[0],
-        `import { ${usedImports.join(', ')} } from 'typeorm';`
-      );
-    }
-
-    return content;
-  }
-
-  async cleanupAllInverseRelationsOnDelete(
-    deletedEntityName: string,
-    fields: any[],
-    listEntitiesFn: () => Promise<Array<{ name: string; moduleName: string; path: string }>>,
-  ): Promise<void> {
-    this.logger.warn('cleanupAllInverseRelationsOnDelete');
-
-    const relationFields = fields.filter((f: any) =>
-      ['many-to-one', 'one-to-many', 'many-to-many', 'one-to-one'].includes(f.type) && f.relationTarget
-    );
-
-    for (const rel of relationFields) {
-      const inversePropertyName = rel.relationInverse || deletedEntityName.toLowerCase() + 's';
-      await this.removeInverseRelationFromTargetEntity(
-        deletedEntityName,
-        rel.relationTarget,
-        inversePropertyName,
-      );
-    }
-
-    await this.removeAllReferencesToEntity(deletedEntityName, listEntitiesFn);
-  }
-
-  async removeAllReferencesToEntity(
-    deletedEntityName: string,
-    listEntitiesFn: () => Promise<Array<{ name: string; moduleName: string; path: string }>>,
-  ): Promise<void> {
-    this.logger.warn('removeAllReferencesToEntity');
-    const entities = await listEntitiesFn();
-
-    for (const entity of entities) {
-      if (entity.name === deletedEntityName) continue;
-
-      const entityFilePath = path.join(entity.path, `${entity.moduleName}.entity.ts`);
-      if (!fs.existsSync(entityFilePath)) continue;
-
-      let content = fs.readFileSync(entityFilePath, 'utf-8');
-      let modified = false;
-
-      const importRegex = new RegExp(
-        `import \\{ ${deletedEntityName} \\} from '\\.\\./${deletedEntityName.toLowerCase()}/${deletedEntityName.toLowerCase()}\\.entity';\\n?`,
-        'g'
-      );
-      if (importRegex.test(content)) {
-        content = content.replace(importRegex, '');
-        modified = true;
-      }
-
-      const relationPatterns = [
-        new RegExp(
-          `\\s*@ManyToOne\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*@JoinColumn\\([^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName};`,
-          'g'
-        ),
-        new RegExp(
-          `\\s*@OneToMany\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName}\\[\\];`,
-          'g'
-        ),
-        new RegExp(
-          `\\s*@ManyToMany\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*@JoinTable\\([^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName}\\[\\];`,
-          'g'
-        ),
-        new RegExp(
-          `\\s*@ManyToMany\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName}\\[\\];`,
-          'g'
-        ),
-        new RegExp(
-          `\\s*@OneToOne\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*@JoinColumn\\([^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName};`,
-          'g'
-        ),
-        new RegExp(
-          `\\s*@OneToOne\\(\\(\\)\\s*=>\\s*${deletedEntityName}[^)]*\\)\\s*\\n?\\s*\\w+:\\s*${deletedEntityName};`,
-          'g'
-        ),
-      ];
-
-      for (const pattern of relationPatterns) {
-        if (pattern.test(content)) {
-          content = content.replace(pattern, '');
-          modified = true;
-        }
-      }
-
-      if (modified) {
-        content = this.cleanupUnusedTypeOrmImports(content);
-        content = content.replace(/\n{3,}/g, '\n\n');
-
-        fs.writeFileSync(entityFilePath, content);
-        this.logger.log(`Cleaned up references to ${deletedEntityName} in ${entity.name}`);
-      }
-    }
+    // Cette méthode reste pour la compatibilité mais les fichiers sont déjà gérés par collectCleanupFiles
+    // Elle ne fait plus d'écriture directe
   }
 }

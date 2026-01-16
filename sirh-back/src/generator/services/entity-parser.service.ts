@@ -8,7 +8,7 @@ export class EntityParserService {
   private readonly entitiesPath = path.join(process.cwd(), 'src', 'entities');
 
   async listEntities(): Promise<Array<{ name: string; moduleName: string; path: string }>> {
-    this.logger.warn('listEntities');
+    // this.logger.warn('listEntities');
     const entities: Array<{ name: string; moduleName: string; path: string }> = [];
 
     if (!fs.existsSync(this.entitiesPath)) {

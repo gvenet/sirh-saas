@@ -1,19 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { FieldDto, FieldType, isRelationType } from '../dto/field.dto';
-import * as fs from 'fs';
-import * as path from 'path';
+
+export interface GeneratedFile {
+  path: string;
+  content: string;
+}
 
 @Injectable()
 export class FileGeneratorService {
   private readonly logger = new Logger(FileGeneratorService.name);
-  private readonly entitiesPath = path.join(process.cwd(), 'src', 'entities');
 
-  async generateEntityFile(
-    modulePath: string,
+  generateEntityFile(
     entityName: string,
     tableName: string,
     fields: FieldDto[],
-  ): Promise<void> {
+  ): string {
     this.logger.warn('generateEntityFile');
 
     const normalFields = fields.filter(f => !isRelationType(f.type));
@@ -48,7 +49,7 @@ export class FileGeneratorService {
       .filter((value, index, self) => self.indexOf(value) === index)
       .join('\n');
 
-    const content = `import { ${typeOrmImports.join(', ')} } from 'typeorm';
+    return `import { ${typeOrmImports.join(', ')} } from 'typeorm';
 ${relatedEntitiesImports ? relatedEntitiesImports + '\n' : ''}
 @Entity('${tableName}')
 export class ${entityName} {
@@ -65,11 +66,6 @@ ${relationFields.length > 0 ? '\n' + relationFields.map((field) => this.generate
   updatedAt: Date;
 }
 `;
-
-    fs.writeFileSync(
-      path.join(modulePath, `${entityName.toLowerCase()}.entity.ts`),
-      content,
-    );
   }
 
   private generateFieldColumn(field: FieldDto): string {
@@ -119,11 +115,10 @@ ${relationFields.length > 0 ? '\n' + relationFields.map((field) => this.generate
     }
   }
 
-  async generateDtoFiles(
-    modulePath: string,
+  generateDtoFiles(
     entityName: string,
     fields: FieldDto[],
-  ): Promise<void> {
+  ): { createDto: string; updateDto: string } {
     this.logger.warn('generateDtoFiles');
     const moduleName = entityName.toLowerCase();
 
@@ -142,7 +137,7 @@ ${relationFields.length > 0 ? '\n' + relationFields.map((field) => this.generate
       validatorImports.push('IsUUID', 'IsArray');
     }
 
-    const createDtoContent = `import { ${validatorImports.join(', ')} } from 'class-validator';
+    const createDto = `import { ${validatorImports.join(', ')} } from 'class-validator';
 ${transformImport}
 export class Create${entityName}Dto {
 ${normalFields.map((field) => this.generateDtoField(field, false)).join('\n')}
@@ -150,20 +145,13 @@ ${relationFields.length > 0 ? '\n' + relationFields.map((field) => this.generate
 }
 `;
 
-    const updateDtoContent = `import { PartialType } from '@nestjs/mapped-types';
+    const updateDto = `import { PartialType } from '@nestjs/mapped-types';
 import { Create${entityName}Dto } from './create-${moduleName}.dto';
 
 export class Update${entityName}Dto extends PartialType(Create${entityName}Dto) {}
 `;
 
-    fs.writeFileSync(
-      path.join(modulePath, `dto/create-${moduleName}.dto.ts`),
-      createDtoContent,
-    );
-    fs.writeFileSync(
-      path.join(modulePath, `dto/update-${moduleName}.dto.ts`),
-      updateDtoContent,
-    );
+    return { createDto, updateDto };
   }
 
   private generateDtoField(field: FieldDto, isUpdate: boolean): string {
@@ -193,23 +181,22 @@ export class Update${entityName}Dto extends PartialType(Create${entityName}Dto) 
     return '';
   }
 
-  async generateServiceFile(
-    modulePath: string,
+  generateServiceFile(
     entityName: string,
     moduleName: string,
     fields?: FieldDto[],
-  ): Promise<void> {
+  ): string {
     this.logger.warn('generateServiceFile');
     const relationFields = fields?.filter(f => isRelationType(f.type)) || [];
     const relationNames = relationFields.map(f => `'${f.name}'`).join(', ');
     const hasRelations = relationFields.length > 0;
 
-    const content = `import { Injectable, NotFoundException } from '@nestjs/common';
+    return `import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ${entityName} } from './${moduleName}.entity';
-import { Create${entityName}Dto } from './dto/create-${moduleName}.dto';
-import { Update${entityName}Dto } from './dto/update-${moduleName}.dto';
+import { Create${entityName}Dto } from './create-${moduleName}.dto';
+import { Update${entityName}Dto } from './update-${moduleName}.dto';
 
 @Injectable()
 export class ${entityName}Service {
@@ -249,17 +236,14 @@ export class ${entityName}Service {
   }
 }
 `;
-
-    fs.writeFileSync(path.join(modulePath, `${moduleName}.service.ts`), content);
   }
 
-  async generateControllerFile(
-    modulePath: string,
+  generateControllerFile(
     entityName: string,
     moduleName: string,
-  ): Promise<void> {
+  ): string {
     this.logger.warn('generateControllerFile');
-    const content = `import {
+    return `import {
   Controller,
   Get,
   Post,
@@ -270,8 +254,8 @@ export class ${entityName}Service {
   UseGuards,
 } from '@nestjs/common';
 import { ${entityName}Service } from './${moduleName}.service';
-import { Create${entityName}Dto } from './dto/create-${moduleName}.dto';
-import { Update${entityName}Dto } from './dto/update-${moduleName}.dto';
+import { Create${entityName}Dto } from './create-${moduleName}.dto';
+import { Update${entityName}Dto } from './update-${moduleName}.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
 @Controller('${moduleName}')
@@ -305,20 +289,14 @@ export class ${entityName}Controller {
   }
 }
 `;
-
-    fs.writeFileSync(
-      path.join(modulePath, `${moduleName}.controller.ts`),
-      content,
-    );
   }
 
-  async generateModuleFile(
-    modulePath: string,
+  generateModuleFile(
     entityName: string,
     moduleName: string,
-  ): Promise<void> {
+  ): string {
     this.logger.warn('generateModuleFile');
-    const content = `import { Module } from '@nestjs/common';
+    return `import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ${entityName}Service } from './${moduleName}.service';
 import { ${entityName}Controller } from './${moduleName}.controller';
@@ -332,8 +310,6 @@ import { ${entityName} } from './${moduleName}.entity';
 })
 export class ${entityName}Module {}
 `;
-
-    fs.writeFileSync(path.join(modulePath, `${moduleName}.module.ts`), content);
   }
 
   getColumnType(fieldType: FieldType): string {

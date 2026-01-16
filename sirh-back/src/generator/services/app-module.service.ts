@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { FileToWrite } from './file-writer.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -7,16 +8,19 @@ export class AppModuleService {
   private readonly logger = new Logger(AppModuleService.name);
   private readonly srcPath = path.join(process.cwd(), 'src');
 
-  async updateAppModule(
+  /**
+   * Prépare le contenu modifié de app.module.ts pour ajouter un module (sans écrire)
+   */
+  async prepareAddModule(
     entityName: string,
     moduleName: string,
-  ): Promise<void> {
-    this.logger.warn('updateAppModule');
+  ): Promise<FileToWrite | null> {
+    this.logger.warn('prepareAddModule');
     const appModulePath = path.join(this.srcPath, 'app.module.ts');
 
     if (!fs.existsSync(appModulePath)) {
       this.logger.warn('app.module.ts not found, skipping auto-import');
-      return;
+      return null;
     }
 
     let content = fs.readFileSync(appModulePath, 'utf-8');
@@ -24,7 +28,7 @@ export class AppModuleService {
     const importStatement = `import { ${entityName}Module } from './entities/${moduleName}/${moduleName}.module';`;
     if (content.includes(`${entityName}Module`)) {
       this.logger.log(`${entityName}Module already exists in app.module.ts`);
-      return;
+      return null;
     }
 
     // Ajouter l'import après les autres imports
@@ -73,19 +77,22 @@ export class AppModuleService {
       content = newContent;
     }
 
-    fs.writeFileSync(appModulePath, content);
-    this.logger.log(`${entityName}Module added to app.module.ts`);
+    this.logger.log(`Prepared ${entityName}Module for app.module.ts`);
+    return { path: appModulePath, content };
   }
 
-  async removeFromAppModule(
+  /**
+   * Prépare le contenu modifié de app.module.ts pour retirer un module (sans écrire)
+   */
+  async prepareRemoveModule(
     entityName: string,
     moduleName: string,
-  ): Promise<void> {
-    this.logger.warn('removeFromAppModule');
+  ): Promise<FileToWrite | null> {
+    this.logger.warn('prepareRemoveModule');
     const appModulePath = path.join(this.srcPath, 'app.module.ts');
 
     if (!fs.existsSync(appModulePath)) {
-      return;
+      return null;
     }
 
     let content = fs.readFileSync(appModulePath, 'utf-8');
@@ -98,7 +105,7 @@ export class AppModuleService {
     const moduleReference = `${entityName}Module,`;
     content = content.replace(new RegExp(`\\s*${moduleReference}\\s*`, 'g'), '\n');
 
-    fs.writeFileSync(appModulePath, content);
-    this.logger.log(`${entityName}Module removed from app.module.ts`);
+    this.logger.log(`Prepared removal of ${entityName}Module from app.module.ts`);
+    return { path: appModulePath, content };
   }
 }

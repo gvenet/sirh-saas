@@ -6,6 +6,7 @@ import { EntityPageModule } from '../entity-page/entity-page.module';
 import {
   DatabaseSchemaService,
   FileGeneratorService,
+  FileWriterService,
   RelationService,
   AppModuleService,
   EntityParserService,
@@ -18,6 +19,7 @@ import {
     GeneratorService,
     DatabaseSchemaService,
     FileGeneratorService,
+    FileWriterService,
     RelationService,
     AppModuleService,
     EntityParserService,

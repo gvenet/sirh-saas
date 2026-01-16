@@ -5,11 +5,12 @@ import { EntityPageService } from '../entity-page/entity-page.service';
 import {
   DatabaseSchemaService,
   FileGeneratorService,
+  FileWriterService,
+  FileToWrite,
   RelationService,
   AppModuleService,
   EntityParserService,
 } from './services';
-import * as fs from 'fs';
 import * as path from 'path';
 
 @Injectable()
@@ -21,6 +22,7 @@ export class GeneratorService {
     private readonly entityPageService: EntityPageService,
     private readonly databaseSchemaService: DatabaseSchemaService,
     private readonly fileGeneratorService: FileGeneratorService,
+    private readonly fileWriterService: FileWriterService,
     private readonly relationService: RelationService,
     private readonly appModuleService: AppModuleService,
     private readonly entityParserService: EntityParserService,
@@ -31,41 +33,42 @@ export class GeneratorService {
     const { name, tableName, fields } = createEntityDto;
     const entityName = this.entityParserService.capitalize(name);
     const moduleName = name.toLowerCase();
+    const modulePath = path.join(this.entitiesPath, moduleName);
 
-    // Synchroniser le schéma de base de données AVANT de créer les fichiers
+    // 1. Synchroniser le schéma de base de données AVANT de créer les fichiers
     await this.databaseSchemaService.syncDatabaseSchema(tableName, fields);
 
-    // S'assurer que le dossier entities existe
-    if (!fs.existsSync(this.entitiesPath)) {
-      fs.mkdirSync(this.entitiesPath, { recursive: true });
+    // 2. Générer tout le contenu des fichiers en mémoire
+    const entityContent = this.fileGeneratorService.generateEntityFile(entityName, tableName, fields);
+    const { createDto, updateDto } = this.fileGeneratorService.generateDtoFiles(entityName, fields);
+    const serviceContent = this.fileGeneratorService.generateServiceFile(entityName, moduleName, fields);
+    const controllerContent = this.fileGeneratorService.generateControllerFile(entityName, moduleName);
+    const moduleContent = this.fileGeneratorService.generateModuleFile(entityName, moduleName);
+
+    // 3. Préparer la liste des fichiers à écrire (tous au même niveau, pas de sous-dossier dto)
+    const filesToWrite: FileToWrite[] = [
+      { path: path.join(modulePath, `${moduleName}.entity.ts`), content: entityContent },
+      { path: path.join(modulePath, `create-${moduleName}.dto.ts`), content: createDto },
+      { path: path.join(modulePath, `update-${moduleName}.dto.ts`), content: updateDto },
+      { path: path.join(modulePath, `${moduleName}.service.ts`), content: serviceContent },
+      { path: path.join(modulePath, `${moduleName}.controller.ts`), content: controllerContent },
+      { path: path.join(modulePath, `${moduleName}.module.ts`), content: moduleContent },
+    ];
+
+    // 4. Ajouter les relations inverses (collecter les modifications)
+    const inverseRelationFiles = await this.relationService.collectInverseRelationFiles(entityName, fields);
+    filesToWrite.push(...inverseRelationFiles);
+
+    // 5. Préparer la modification de app.module.ts
+    const appModuleUpdate = await this.appModuleService.prepareAddModule(entityName, moduleName);
+    if (appModuleUpdate) {
+      filesToWrite.push(appModuleUpdate);
     }
 
-    // Créer le dossier du module dans src/entities
-    const modulePath = path.join(this.entitiesPath, moduleName);
-    if (!fs.existsSync(modulePath)) {
-      fs.mkdirSync(modulePath, { recursive: true });
-    }
+    // 6. Écrire TOUS les fichiers d'un coup
+    this.fileWriterService.writeAllFiles(filesToWrite);
 
-    // Créer le dossier dto
-    const dtoPath = path.join(modulePath, 'dto');
-    if (!fs.existsSync(dtoPath)) {
-      fs.mkdirSync(dtoPath, { recursive: true });
-    }
-
-    // Générer tous les fichiers
-    await this.fileGeneratorService.generateEntityFile(modulePath, entityName, tableName, fields);
-    await this.fileGeneratorService.generateDtoFiles(modulePath, entityName, fields);
-    await this.fileGeneratorService.generateServiceFile(modulePath, entityName, moduleName, fields);
-    await this.fileGeneratorService.generateControllerFile(modulePath, entityName, moduleName);
-    await this.fileGeneratorService.generateModuleFile(modulePath, entityName, moduleName);
-
-    // Ajouter les relations inverses sur les entités cibles
-    await this.relationService.addInverseRelationsToTargetEntities(entityName, fields);
-
-    // Mettre à jour app.module.ts
-    await this.appModuleService.updateAppModule(entityName, moduleName);
-
-    // Générer les pages par défaut (view et edit)
+    // 7. Générer les pages par défaut (en base de données, pas de fichiers)
     await this.entityPageService.generateDefaultPages(entityName, fields);
 
     return {
@@ -73,8 +76,8 @@ export class GeneratorService {
       path: modulePath,
       files: [
         `${moduleName}.entity.ts`,
-        `dto/create-${moduleName}.dto.ts`,
-        `dto/update-${moduleName}.dto.ts`,
+        `create-${moduleName}.dto.ts`,
+        `update-${moduleName}.dto.ts`,
         `${moduleName}.service.ts`,
         `${moduleName}.controller.ts`,
         `${moduleName}.module.ts`,
@@ -94,7 +97,6 @@ export class GeneratorService {
 
   async updateEntity(name: string, updateEntityDto: CreateEntityDto) {
     this.logger.warn('updateEntity');
-    // Récupérer les anciennes relations avant suppression
     const oldSchema = await this.entityParserService.getEntitySchema(name);
     const oldRelations = oldSchema.fields.filter(f => isRelationType(f.type as FieldType));
     const oldFields = oldSchema.fields;
@@ -102,7 +104,7 @@ export class GeneratorService {
     // Supprimer l'ancienne entité (sans supprimer la table en base pour conserver les données)
     await this.deleteEntity(name, false, false);
 
-    // Recréer avec les nouvelles données (syncDatabaseSchema sera appelé dans generateEntity)
+    // Recréer avec les nouvelles données
     const result = await this.generateEntity(updateEntityDto);
 
     // Nettoyer les colonnes supprimées de la base de données
@@ -124,11 +126,10 @@ export class GeneratorService {
     const entityName = this.entityParserService.capitalize(name);
     const entityPath = path.join(this.entitiesPath, moduleName);
 
-    if (!fs.existsSync(entityPath)) {
+    if (!this.fileWriterService.exists(entityPath)) {
       throw new Error(`Entity ${name} not found`);
     }
 
-    // Récupérer le nom de la table et les relations avant de supprimer les fichiers
     let tableName: string | null = null;
     let relationTables: string[] = [];
     let schema: any = null;
@@ -137,36 +138,41 @@ export class GeneratorService {
       schema = await this.entityParserService.getEntitySchema(name);
       tableName = schema.tableName;
 
-      // Récupérer les tables de jonction ManyToMany
       const manyToManyRelations = schema.fields.filter(f => f.type === 'many-to-many');
       relationTables = manyToManyRelations.map(rel => `${schema.tableName}_${rel.name}`);
     } catch (e) {
       this.logger.warn(`Could not get entity schema: ${e.message}`);
     }
 
-    // Nettoyer les relations inverses dans les autres entités AVANT de supprimer les fichiers
+    // Collecter les fichiers à modifier (relations inverses) - SANS app.module.ts
+    const filesToWrite: FileToWrite[] = [];
+
     if (schema) {
-      await this.relationService.cleanupAllInverseRelationsOnDelete(
+      const cleanupFiles = await this.relationService.collectCleanupFiles(
         entityName,
         schema.fields,
         () => this.entityParserService.listEntities(),
       );
+      filesToWrite.push(...cleanupFiles);
     }
 
-    // Supprimer le dossier de l'entité
-    fs.rmSync(entityPath, { recursive: true, force: true });
-
-    // Retirer du app.module.ts si demandé
+    // Préparer la modification de app.module.ts
     if (removeFromAppModule) {
-      await this.appModuleService.removeFromAppModule(entityName, moduleName);
+      const appModuleUpdate = await this.appModuleService.prepareRemoveModule(entityName, moduleName);
+      if (appModuleUpdate) {
+        filesToWrite.push(appModuleUpdate);
+      }
     }
+
+    // Supprimer le dossier ET écrire les modifications en une seule opération
+    this.fileWriterService.deleteAndWriteAll([entityPath], filesToWrite);
 
     // Supprimer la table et les tables de jonction en base
     if (dropTable && tableName) {
       await this.databaseSchemaService.dropTableFromDatabase(tableName, relationTables);
     }
 
-    // Supprimer les pages associées à cette entité
+    // Supprimer les pages associées
     await this.entityPageService.removeByEntity(entityName);
 
     return {
