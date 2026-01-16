@@ -11,6 +11,7 @@ import * as chokidar from 'chokidar';
 export class GeneratorService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(GeneratorService.name);
   private readonly srcPath = path.join(process.cwd(), 'src');
+  private readonly entitiesPath = path.join(process.cwd(), 'src', 'entities');
   private fileWatcher: chokidar.FSWatcher | null = null;
   private isShuttingDown = false;
 
@@ -338,7 +339,7 @@ export class GeneratorService implements OnModuleInit, OnModuleDestroy {
   private async getTableNameForEntity(entityName: string): Promise<string | null> {
     this.logger.warn('getTableNameForEntity');
     const moduleName = entityName.toLowerCase();
-    const entityFilePath = path.join(this.srcPath, moduleName, `${moduleName}.entity.ts`);
+    const entityFilePath = path.join(this.entitiesPath, moduleName, `${moduleName}.entity.ts`);
 
     if (!fs.existsSync(entityFilePath)) {
       return null;
@@ -374,8 +375,13 @@ export class GeneratorService implements OnModuleInit, OnModuleDestroy {
     // Synchroniser le schéma de base de données AVANT de créer les fichiers
     await this.syncDatabaseSchema(tableName, fields);
 
-    // Créer le dossier du module
-    const modulePath = path.join(this.srcPath, moduleName);
+    // S'assurer que le dossier entities existe
+    if (!fs.existsSync(this.entitiesPath)) {
+      fs.mkdirSync(this.entitiesPath, { recursive: true });
+    }
+
+    // Créer le dossier du module dans src/entities
+    const modulePath = path.join(this.entitiesPath, moduleName);
     if (!fs.existsSync(modulePath)) {
       fs.mkdirSync(modulePath, { recursive: true });
     }
@@ -694,7 +700,7 @@ export class ${entityName}Service {
 import { ${entityName}Service } from './${moduleName}.service';
 import { Create${entityName}Dto } from './dto/create-${moduleName}.dto';
 import { Update${entityName}Dto } from './dto/update-${moduleName}.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
 @Controller('${moduleName}')
 @UseGuards(JwtAuthGuard)
@@ -815,7 +821,7 @@ export class ${entityName}Module {}
     for (const field of relationFields) {
       const targetEntityName = field.relationTarget!;
       const targetModuleName = targetEntityName.toLowerCase();
-      const targetEntityPath = path.join(this.srcPath, targetModuleName, `${targetModuleName}.entity.ts`);
+      const targetEntityPath = path.join(this.entitiesPath, targetModuleName, `${targetModuleName}.entity.ts`);
 
       if (!fs.existsSync(targetEntityPath)) {
         this.logger.warn(`Target entity ${targetEntityName} not found, skipping inverse relation`);
@@ -960,7 +966,7 @@ export class ${entityName}Module {}
     let content = fs.readFileSync(appModulePath, 'utf-8');
 
     // Vérifier si le module est déjà importé
-    const importStatement = `import { ${entityName}Module } from './${moduleName}/${moduleName}.module';`;
+    const importStatement = `import { ${entityName}Module } from './entities/${moduleName}/${moduleName}.module';`;
     if (content.includes(`${entityName}Module`)) {
       this.logger.log(`${entityName}Module already exists in app.module.ts`);
       return;
@@ -974,29 +980,47 @@ export class ${entityName}Module {}
 
     content = `${beforeImports}\n${importStatement}${afterImports}`;
 
-    // Trouver le dernier élément du tableau imports avant le ]
-    // On cherche spécifiquement le @Module decorator
-    const moduleDecoratorMatch = content.match(/@Module\(\{[\s\S]*?imports:\s*\[([\s\S]*?)\]/);
+    // Trouver le tableau imports principal du @Module decorator
+    // On doit éviter les imports: [] imbriqués (comme dans TypeOrmModule.forRootAsync)
+    // Stratégie: chercher le dernier élément avant 'controllers:' ou 'providers:'
+    const moduleMatch = content.match(/@Module\(\{[\s\S]*?imports:\s*\[([\s\S]*?)\],\s*(controllers|providers):/);
 
-    if (moduleDecoratorMatch) {
-      const importsArray = moduleDecoratorMatch[1];
+    if (moduleMatch) {
+      const importsArray = moduleMatch[1];
+
+      // Compter les crochets pour trouver la fin du tableau imports principal
+      // On va parser jusqu'à trouver le crochet fermant au bon niveau
+      const moduleStart = content.indexOf('@Module({');
+      const importsStart = content.indexOf('imports:', moduleStart);
+      const bracketStart = content.indexOf('[', importsStart);
+
+      let depth = 1;
+      let bracketEnd = bracketStart + 1;
+      while (depth > 0 && bracketEnd < content.length) {
+        if (content[bracketEnd] === '[') depth++;
+        if (content[bracketEnd] === ']') depth--;
+        bracketEnd++;
+      }
+      bracketEnd--; // Revenir au crochet fermant
+
+      const actualImportsArray = content.substring(bracketStart + 1, bracketEnd);
+
       // Trouver la dernière ligne non-vide avant le ]
-      const lines = importsArray.split('\n').filter(line => line.trim());
+      const lines = actualImportsArray.split('\n').filter(line => line.trim());
       const lastLine = lines[lines.length - 1];
 
       // Ajouter une virgule si nécessaire
-      let newImportsArray = importsArray;
+      let newImportsArray = actualImportsArray;
       if (lastLine && !lastLine.trim().endsWith(',')) {
-        newImportsArray = importsArray.replace(lastLine, lastLine.trim() + ',');
+        newImportsArray = actualImportsArray.replace(lastLine, lastLine.trim() + ',');
       }
 
       // Ajouter le nouveau module
       newImportsArray += `\n    ${entityName}Module,`;
 
-      content = content.replace(
-        moduleDecoratorMatch[0],
-        moduleDecoratorMatch[0].replace(importsArray, newImportsArray),
-      );
+      // Remplacer le contenu du tableau imports
+      const newContent = content.substring(0, bracketStart + 1) + newImportsArray + content.substring(bracketEnd);
+      content = newContent;
     }
 
     fs.writeFileSync(appModulePath, content);
@@ -1006,23 +1030,22 @@ export class ${entityName}Module {}
   async listEntities() {
     this.logger.warn('listEntities');
     const entities: Array<{ name: string; moduleName: string; path: string }> = [];
-    const srcPath = this.srcPath;
 
-    if (!fs.existsSync(srcPath)) {
+    if (!fs.existsSync(this.entitiesPath)) {
       return entities;
     }
 
-    const folders = fs.readdirSync(srcPath, { withFileTypes: true })
+    const folders = fs.readdirSync(this.entitiesPath, { withFileTypes: true })
       .filter(dirent => dirent.isDirectory())
       .map(dirent => dirent.name);
 
     for (const folder of folders) {
-      const entityFilePath = path.join(srcPath, folder, `${folder}.entity.ts`);
+      const entityFilePath = path.join(this.entitiesPath, folder, `${folder}.entity.ts`);
       if (fs.existsSync(entityFilePath)) {
         entities.push({
           name: this.capitalize(folder),
           moduleName: folder,
-          path: path.join(srcPath, folder),
+          path: path.join(this.entitiesPath, folder),
         });
       }
     }
@@ -1033,7 +1056,7 @@ export class ${entityName}Module {}
   async getEntitySchema(name: string) {
     this.logger.warn('getEntitySchema');
     const moduleName = name.toLowerCase();
-    const entityPath = path.join(this.srcPath, moduleName);
+    const entityPath = path.join(this.entitiesPath, moduleName);
     const entityFilePath = path.join(entityPath, `${moduleName}.entity.ts`);
 
     if (!fs.existsSync(entityFilePath)) {
@@ -1446,7 +1469,7 @@ export class ${entityName}Module {}
   ): Promise<void> {
     this.logger.warn('removeInverseRelationFromTargetEntity');
     const targetModuleName = targetEntityName.toLowerCase();
-    const targetEntityPath = path.join(this.srcPath, targetModuleName, `${targetModuleName}.entity.ts`);
+    const targetEntityPath = path.join(this.entitiesPath, targetModuleName, `${targetModuleName}.entity.ts`);
 
     if (!fs.existsSync(targetEntityPath)) {
       return;
@@ -1530,7 +1553,7 @@ export class ${entityName}Module {}
     this.logger.warn('deleteEntity');
     const moduleName = name.toLowerCase();
     const entityName = this.capitalize(name);
-    const entityPath = path.join(this.srcPath, moduleName);
+    const entityPath = path.join(this.entitiesPath, moduleName);
 
     if (!fs.existsSync(entityPath)) {
       throw new Error(`Entity ${name} not found`);
@@ -1730,7 +1753,7 @@ export class ${entityName}Module {}
     let content = fs.readFileSync(appModulePath, 'utf-8');
 
     // Retirer l'import
-    const importStatement = `import { ${entityName}Module } from './${moduleName}/${moduleName}.module';`;
+    const importStatement = `import { ${entityName}Module } from './entities/${moduleName}/${moduleName}.module';`;
     content = content.replace(importStatement + '\n', '');
 
     // Retirer du tableau imports

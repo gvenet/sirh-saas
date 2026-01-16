@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module';
 import { GeneratorModule } from './generator/generator.module';
 import { ApplicationModule } from './application/application.module';
 import { EntityPageModule } from './entity-page/entity-page.module';
+import { AaaModule } from './entities/aaa/aaa.module';
 
 @Module({
   imports: [
@@ -16,8 +17,7 @@ import { EntityPageModule } from './entity-page/entity-page.module';
       envFilePath: '.env',
     }),
     TypeOrmModule.forRootAsync({
-imports: [ConfigModule,
-],
+      imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
         host: configService.get('DB_HOST'),
@@ -38,7 +38,8 @@ imports: [ConfigModule,
     GeneratorModule,
     ApplicationModule,
     EntityPageModule,
-  ],
+
+    AaaModule,],
   controllers: [AppController],
   providers: [AppService],
 })
