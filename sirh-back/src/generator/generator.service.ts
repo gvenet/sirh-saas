@@ -5,14 +5,12 @@ import { FieldDto, FieldType, isRelationType } from './dto/field.dto';
 import { EntityPageService } from '../entity-page/entity-page.service';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as chokidar from 'chokidar';
 
 @Injectable()
 export class GeneratorService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(GeneratorService.name);
   private readonly srcPath = path.join(process.cwd(), 'src');
   private readonly entitiesPath = path.join(process.cwd(), 'src', 'entities');
-  private fileWatcher: chokidar.FSWatcher | null = null;
   private isShuttingDown = false;
 
   constructor(
@@ -23,72 +21,14 @@ export class GeneratorService implements OnModuleInit, OnModuleDestroy {
   /**
    * Initialise le watcher de fichiers au démarrage du module
    */
+  
   onModuleInit() {
-    this.logger.warn('onModuleInit');
-    this.initFileWatcher();
   }
 
   /**
    * Arrête le watcher à la destruction du module
    */
   async onModuleDestroy(): Promise<void> {
-    this.logger.warn('onModuleDestroy');
-    this.isShuttingDown = true;
-    if (this.fileWatcher) {
-      this.logger.log('Closing file watcher...');
-      await this.fileWatcher.close();
-      this.fileWatcher = null;
-      this.logger.log('File watcher closed');
-    }
-  }
-
-  /**
-   * Initialise le watcher pour surveiller les fichiers .ts dans src/
-   * Log quel fichier a été modifié/ajouté/supprimé
-   */
-  private initFileWatcher(): void {
-    this.logger.warn('initFileWatcher');
-
-    // Surveiller tous les fichiers .ts sauf node_modules et dist
-    const watchPath = path.join(this.srcPath, '**/*.ts');
-
-    this.fileWatcher = chokidar.watch(watchPath, {
-      ignored: [
-        '**/node_modules/**',
-        '**/dist/**',
-        '**/*.spec.ts',
-        '**/*.test.ts',
-      ],
-      persistent: true,
-      ignoreInitial: true, // Ne pas logger les fichiers existants au démarrage
-      awaitWriteFinish: {
-        stabilityThreshold: 100,
-        pollInterval: 50,
-      },
-    });
-
-    this.fileWatcher
-      .on('add', (filePath) => {
-        if (this.isShuttingDown) return;
-        const relativePath = path.relative(process.cwd(), filePath);
-        this.logger.warn(`📁 FILE ADDED: ${relativePath}`);
-      })
-      .on('change', (filePath) => {
-        if (this.isShuttingDown) return;
-        const relativePath = path.relative(process.cwd(), filePath);
-        this.logger.warn(`✏️  FILE CHANGED: ${relativePath}`);
-      })
-      .on('unlink', (filePath) => {
-        if (this.isShuttingDown) return;
-        const relativePath = path.relative(process.cwd(), filePath);
-        this.logger.warn(`🗑️  FILE DELETED: ${relativePath}`);
-      })
-      .on('error', (error: Error) => {
-        if (this.isShuttingDown) return;
-        this.logger.error(`Watcher error: ${error.message}`);
-      });
-
-    this.logger.log('File watcher initialized - monitoring src/**/*.ts');
   }
 
   /**
@@ -804,7 +744,7 @@ export class ${entityName}Module {}
   }
 
   private capitalize(str: string): string {
-    this.logger.warn('capitalize');
+    // this.logger.warn('capitalize');
     return str.charAt(0).toUpperCase() + str.slice(1);
   }
 
