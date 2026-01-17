@@ -19,6 +19,9 @@ import { EntityPage, PageField, PageType, FieldDisplayType } from '../../generat
 export class DashboardComponent implements OnInit {
   dropdownOpen = false;
 
+  // Track expanded submenus by parent menu item ID
+  expandedMenus = signal<Set<string>>(new Set());
+
   // Initial loading state to prevent flash
   initializing = signal(true);
 
@@ -73,6 +76,32 @@ export class DashboardComponent implements OnInit {
     // Reset to dashboard view when changing application
     this.currentView.set('dashboard');
     this.currentMenuPage.set(null);
+    // Reset expanded menus
+    this.expandedMenus.set(new Set());
+  }
+
+  // Toggle submenu expand/collapse
+  toggleSubmenu(menuId: string | number, event: Event): void {
+    event.stopPropagation();
+    const id = String(menuId);
+    const current = this.expandedMenus();
+    const newSet = new Set(current);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    this.expandedMenus.set(newSet);
+  }
+
+  // Check if a menu is expanded
+  isMenuExpanded(menuId: string | number): boolean {
+    return this.expandedMenus().has(String(menuId));
+  }
+
+  // Check if a menu item has children
+  hasChildren(item: MenuItem): boolean {
+    return !!(item.children && item.children.length > 0);
   }
 
   clearApplication(): void {

@@ -9,7 +9,13 @@ export default class ApplicationService {
   async findAllApplications() {
     return Application.query()
       .preload('menuItems', (query) => {
-        query.orderBy('order', 'asc').preload('menuPage')
+        query
+          .whereNull('parentId')
+          .orderBy('order', 'asc')
+          .preload('menuPage')
+          .preload('children', (childQuery) => {
+            childQuery.orderBy('order', 'asc').preload('menuPage')
+          })
       })
       .orderBy('order', 'asc')
   }
@@ -21,7 +27,13 @@ export default class ApplicationService {
     return Application.query()
       .where('id', id)
       .preload('menuItems', (query) => {
-        query.orderBy('order', 'asc').preload('menuPage')
+        query
+          .whereNull('parentId')
+          .orderBy('order', 'asc')
+          .preload('menuPage')
+          .preload('children', (childQuery) => {
+            childQuery.orderBy('order', 'asc').preload('menuPage')
+          })
       })
       .firstOrFail()
   }
@@ -55,14 +67,25 @@ export default class ApplicationService {
    * Get all menu items with their pages
    */
   async findAllMenuItems() {
-    return MenuItem.query().preload('menuPage').orderBy('order', 'asc')
+    return MenuItem.query()
+      .preload('menuPage')
+      .preload('children', (childQuery) => {
+        childQuery.orderBy('order', 'asc').preload('menuPage')
+      })
+      .orderBy('order', 'asc')
   }
 
   /**
    * Get a specific menu item by ID
    */
   async findMenuItemById(id: number) {
-    return MenuItem.query().where('id', id).preload('menuPage').firstOrFail()
+    return MenuItem.query()
+      .where('id', id)
+      .preload('menuPage')
+      .preload('children', (childQuery) => {
+        childQuery.orderBy('order', 'asc').preload('menuPage')
+      })
+      .firstOrFail()
   }
 
   /**

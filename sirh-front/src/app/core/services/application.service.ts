@@ -58,7 +58,19 @@ export class ApplicationService {
     localStorage.setItem(this.STORAGE_KEY, String(selectedApp.id));
 
     if (selectedApp?.menuItems) {
-      this.menuItems.set(selectedApp.menuItems.filter(m => m.active).sort((a, b) => a.order - b.order));
+      // Backend now returns only parent menus with children preloaded
+      // Just filter active items and their active children
+      const activeMenus = selectedApp.menuItems
+        .filter(m => m.active)
+        .sort((a, b) => a.order - b.order)
+        .map(menu => ({
+          ...menu,
+          children: (menu.children || [])
+            .filter(c => c.active)
+            .sort((a, b) => a.order - b.order)
+        }));
+
+      this.menuItems.set(activeMenus);
     } else {
       this.menuItems.set([]);
     }

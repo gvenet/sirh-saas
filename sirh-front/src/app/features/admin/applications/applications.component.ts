@@ -30,7 +30,7 @@ export class ApplicationsComponent implements OnInit {
 
   // Form data
   appForm: CreateApplicationDto = { name: '', icon: '', order: 0, active: true };
-  menuForm: CreateMenuItemDto = { label: '', entityName: '', route: '', icon: '', order: 0, active: true, applicationId: '' };
+  menuForm: CreateMenuItemDto = { label: '', entityName: '', route: '', icon: '', order: 0, active: true, applicationId: '', parentId: '' };
 
   constructor(
     private appService: ApplicationService,
@@ -109,13 +109,29 @@ export class ApplicationsComponent implements OnInit {
   }
 
   // Menu CRUD
-  openMenuModal(app: Application, menu?: MenuItem): void {
+  openMenuModal(app: Application, menu?: MenuItem, parentId?: string): void {
     this.selectedAppForMenu = app;
     this.editingMenu = menu || null;
     this.menuForm = menu
-      ? { label: menu.label, entityName: menu.entityName, route: menu.route, icon: menu.icon, order: menu.order, active: menu.active, applicationId: app.id }
-      : { label: '', entityName: '', route: '', icon: '', order: 0, active: true, applicationId: app.id };
+      ? { label: menu.label, entityName: menu.entityName, route: menu.route, icon: menu.icon, order: menu.order, active: menu.active, applicationId: app.id, parentId: menu.parentId || '' }
+      : { label: '', entityName: '', route: '', icon: '', order: 0, active: true, applicationId: app.id, parentId: parentId || '' };
     this.showMenuModal = true;
+  }
+
+  // Get parent menu items (now backend returns only parents with children nested)
+  getParentMenuItems(app: Application): MenuItem[] {
+    return app.menuItems || [];
+  }
+
+  // Get submenu items for a parent (now use nested children)
+  getSubMenuItems(menu: MenuItem): MenuItem[] {
+    return menu.children || [];
+  }
+
+  // Get label for parent menu
+  getParentLabel(parentId: string, app: Application): string {
+    const parent = (app.menuItems || []).find(item => String(item.id) === String(parentId));
+    return parent?.label || '';
   }
 
   closeMenuModal(): void {

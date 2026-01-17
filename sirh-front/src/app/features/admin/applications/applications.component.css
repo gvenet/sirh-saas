@@ -345,6 +345,40 @@
   font-size: 0.9rem;
 }
 
+/* Submenu styles */
+.menu-item-group {
+  margin-bottom: 0.5rem;
+}
+
+.menu-item-group:last-child {
+  margin-bottom: 0;
+}
+
+.submenu-list {
+  margin-left: 1.5rem;
+  padding-left: 1rem;
+  border-left: 2px solid #e2e8f0;
+  margin-top: 0.5rem;
+}
+
+.submenu-item {
+  background: #edf2f7;
+  font-size: 0.9rem;
+}
+
+.submenu-item .menu-label {
+  font-size: 0.9rem;
+}
+
+.btn-icon-sm.btn-add {
+  color: #48bb78;
+}
+
+.btn-icon-sm.btn-add:hover {
+  background: #c6f6d5;
+  color: #276749;
+}
+
 /* Modal */
 .modal-backdrop {
   position: fixed;

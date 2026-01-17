@@ -18,7 +18,9 @@ export interface MenuItem {
   order: number;
   active: boolean;
   applicationId: string;
+  parentId?: string;
   menuPage?: MenuPage;
+  children?: MenuItem[];
 }
 
 export interface Application {
@@ -46,4 +48,5 @@ export interface CreateMenuItemDto {
   order?: number;
   active?: boolean;
   applicationId: string;
+  parentId?: string;
 }
