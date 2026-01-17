@@ -79,6 +79,12 @@ export const routes: Routes = [
     loadComponent: () => import('./features/dynamic-page/dynamic-page.component').then(m => m.DynamicPageComponent),
     canActivate: [authGuard]
   },
+  // Menu pages - pages associated with menu items
+  {
+    path: 'menu/:menuItemId',
+    loadComponent: () => import('./features/menu-page/menu-page.component').then(m => m.MenuPageComponent),
+    canActivate: [authGuard]
+  },
   {
     path: '',
     redirectTo: '/dashboard',

@@ -8,35 +8,16 @@
 */
 
 import router from '@adonisjs/core/services/router'
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+const AaController = () => import('#controllers/aa_controller')
 
 import { middleware } from './kernel.js'
 
 const GeneratorController = () => import('#controllers/generator_controller')
 const AuthController = () => import('#controllers/auth_controller')
 const EntityPageController = () => import('#controllers/entity_page_controller')
+const ApplicationController = () => import('#controllers/applications_controller')
+
+
 
 // Health check
 router.get('/', async () => {
@@ -83,6 +64,26 @@ router.group(() => {
   router.put('/:pageId/fields/reorder', [EntityPageController, 'reorderFields'])
 }).prefix('/entity-pages')
 
+// Applications routes
+router.group(() => {
+  // Application CRUD
+  router.get('/', [ApplicationController, 'index'])
+  router.get('/:id', [ApplicationController, 'show'])
+  router.post('/', [ApplicationController, 'store'])
+  router.put('/:id', [ApplicationController, 'update'])
+  router.delete('/:id', [ApplicationController, 'destroy'])
+
+  // Menu Items
+  router.get('/menu-items/all', [ApplicationController, 'indexMenuItems'])
+  router.post('/menu-items', [ApplicationController, 'storeMenuItem'])
+  router.put('/menu-items/:id', [ApplicationController, 'updateMenuItem'])
+  router.delete('/menu-items/:id', [ApplicationController, 'destroyMenuItem'])
+
+  // Menu Pages
+  router.get('/pages/:id', [ApplicationController, 'showMenuPage'])
+  router.get('/menu-items/:menuItemId/page', [ApplicationController, 'showMenuPageByMenuItem'])
+  router.put('/pages/:id', [ApplicationController, 'updateMenuPage'])
+}).prefix('/applications')
 
 
 
@@ -92,3 +93,13 @@ router.group(() => {
 
 
 
+
+
+// Aa routes
+router.group(() => {
+  router.get('/', [AaController, 'index'])
+  router.get('/:id', [AaController, 'show'])
+  router.post('/', [AaController, 'store'])
+  router.put('/:id', [AaController, 'update'])
+  router.delete('/:id', [AaController, 'destroy'])
+}).prefix('/aa')

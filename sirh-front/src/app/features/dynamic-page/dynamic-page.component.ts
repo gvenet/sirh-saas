@@ -181,22 +181,22 @@ export class DynamicPageComponent implements OnInit {
     if (!this.page || !this.isEditMode) return;
 
     this.saving = true;
+    const entityEndpoint = this.page.entityName.toLowerCase();
     const endpoint = this.entityId
-      ? `${this.apiBaseUrl}/${this.page.entityName.toLowerCase()}/${this.entityId}`
-      : `${this.apiBaseUrl}/${this.page.entityName.toLowerCase()}`;
+      ? `${this.apiBaseUrl}/${entityEndpoint}/${this.entityId}`
+      : `${this.apiBaseUrl}/${entityEndpoint}`;
 
     const request = this.entityId
       ? this.http.patch(endpoint, this.entityData)
       : this.http.post(endpoint, this.entityData);
 
     request.subscribe({
-      next: (result) => {
+      next: () => {
         this.saving = false;
-        if (!this.entityId && result && typeof result === 'object' && 'id' in result) {
-          // Navigate to view the new entity
-          this.router.navigate(['/entity', this.page!.entityName.toLowerCase(), (result as { id: string }).id]);
-        }
-        this.cdr.detectChanges();
+        // Redirect to entity list after save
+        this.router.navigate(['/dashboard'], {
+          queryParams: { entity: this.page!.entityName }
+        });
       },
       error: (error) => {
         this.error = `Erreur lors de la sauvegarde: ${error.error?.message || error.message}`;
@@ -207,7 +207,18 @@ export class DynamicPageComponent implements OnInit {
   }
 
   cancel(): void {
-    window.history.back();
+    this.goBack();
+  }
+
+  goBack(): void {
+    // Navigate back to the entity list
+    if (this.page) {
+      this.router.navigate(['/dashboard'], {
+        queryParams: { entity: this.page.entityName }
+      });
+    } else {
+      this.router.navigate(['/dashboard']);
+    }
   }
 
   // Helper methods for template

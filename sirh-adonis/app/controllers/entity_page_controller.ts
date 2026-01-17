@@ -3,6 +3,7 @@ import EntityPageService from '#services/entity_page_service'
 import { inject } from '@adonisjs/core'
 import PageField from '#models/page_field'
 
+
 @inject()
 export default class EntityPageController {
   constructor(private entityPageService: EntityPageService) {}

@@ -5,7 +5,7 @@ import { Router, ActivatedRoute } from '@angular/router';
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 import { EntityPageService } from '../services/entity-page.service';
 import { GeneratorService } from '../services/generator';
-import { EntityPage, PageField, FieldDisplayType, CreatePageFieldDto } from '../models/entity-page.model';
+import { EntityPage, PageField, FieldDisplayType, CreatePageFieldDto, PageType } from '../models/entity-page.model';
 import { isRelationType } from '../models/field.model';
 import { AdminNavbarComponent } from '../../shared/components/admin-navbar/admin-navbar.component';
 
@@ -20,7 +20,7 @@ interface AvailableField {
 interface LocalField extends Partial<PageField> {
   id?: string;
   fieldName: string;
-  label: string;
+  label: string | undefined;
   displayType: FieldDisplayType;
   order: number;
   colSpan: number;
@@ -68,6 +68,11 @@ export class PageEditorComponent implements OnInit {
     { value: 12, label: 'Pleine largeur' }
   ];
 
+  // Configuration du bouton d'ajout (pour pages LIST)
+  PageType = PageType;
+  addButtonEnabled = false;
+  addButtonLabel = 'Nouveau';
+
   constructor(
     private entityPageService: EntityPageService,
     private generatorService: GeneratorService,
@@ -98,12 +103,18 @@ export class PageEditorComponent implements OnInit {
         this.configuredFields = page.fields
           .map(f => ({
             ...f,
+            label: f.label ?? this.formatLabel(f.fieldName),
             isNew: false
           }))
           .sort((a, b) => a.order - b.order);
         // Garder une copie de l'état original
         this.originalFields = JSON.parse(JSON.stringify(this.configuredFields));
         this.hasChanges = false;
+        // Charger la config du bouton d'ajout pour les pages LIST
+        if (page.pageType === PageType.LIST && page.config) {
+          this.addButtonEnabled = page.config['addButtonEnabled'] ?? false;
+          this.addButtonLabel = page.config['addButtonLabel'] ?? 'Nouveau';
+        }
         this.loadEntityFields(page.entityName);
       },
       error: (error) => {
@@ -217,6 +228,10 @@ export class PageEditorComponent implements OnInit {
     this.successMessage = null;
   }
 
+  onAddButtonConfigChange(): void {
+    this.markAsChanged();
+  }
+
   // Sauvegarder tous les changements
   saveAllChanges(): void {
     if (!this.page || !this.hasChanges) return;
@@ -224,6 +239,21 @@ export class PageEditorComponent implements OnInit {
     this.saving = true;
     this.error = null;
     this.successMessage = null;
+
+    // Mettre à jour la config de la page si c'est une page LIST
+    if (this.page.pageType === PageType.LIST) {
+      const pageConfig = {
+        ...this.page.config,
+        addButtonEnabled: this.addButtonEnabled,
+        addButtonLabel: this.addButtonLabel
+      };
+      // Sauvegarder la config de la page
+      this.entityPageService.update(this.page.id, { config: pageConfig }).subscribe({
+        error: (error) => {
+          console.error('Erreur lors de la sauvegarde de la config:', error);
+        }
+      });
+    }
 
     // Préparer les données pour la mise à jour bulk
     const fieldsData = this.configuredFields.map(f => ({
@@ -245,7 +275,7 @@ export class PageEditorComponent implements OnInit {
         this.successMessage = 'Page mise à jour avec succès';
         // Mettre à jour avec les données du serveur
         this.configuredFields = updatedPage.fields
-          .map(f => ({ ...f, isNew: false }))
+          .map(f => ({ ...f, label: f.label ?? this.formatLabel(f.fieldName), isNew: false }))
           .sort((a, b) => a.order - b.order);
         this.originalFields = JSON.parse(JSON.stringify(this.configuredFields));
         this.cdr.detectChanges();

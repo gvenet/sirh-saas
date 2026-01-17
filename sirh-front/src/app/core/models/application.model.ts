@@ -1,3 +1,13 @@
+export interface MenuPage {
+  id: string;
+  menuItemId: string;
+  title: string;
+  description?: string;
+  content?: string;
+  config?: Record<string, unknown>;
+  active: boolean;
+}
+
 export interface MenuItem {
   id: string;
   label: string;
@@ -8,6 +18,7 @@ export interface MenuItem {
   order: number;
   active: boolean;
   applicationId: string;
+  menuPage?: MenuPage;
 }
 
 export interface Application {

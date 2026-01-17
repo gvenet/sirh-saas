@@ -1,7 +1,7 @@
 import { Injectable, signal, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, tap } from 'rxjs';
-import { Application, MenuItem, CreateApplicationDto, CreateMenuItemDto } from '../models/application.model';
+import { Application, MenuItem, MenuPage, CreateApplicationDto, CreateMenuItemDto } from '../models/application.model';
 
 @Injectable({
   providedIn: 'root'
@@ -22,6 +22,8 @@ export class ApplicationService {
     ]
   };
 
+  private readonly STORAGE_KEY = 'selectedApplicationId';
+
   applications = signal<Application[]>([this.defaultApp]);
   selectedApplication = signal<Application>(this.defaultApp);
   menuItems = signal<MenuItem[]>(this.defaultApp.menuItems || []);
@@ -31,7 +33,18 @@ export class ApplicationService {
     return this.http.get<Application[]>(this.apiUrl).pipe(
       tap(apps => {
         // Ajouter l'app par défaut au début
-        this.applications.set([this.defaultApp, ...apps.sort((a, b) => a.order - b.order)]);
+        const allApps = [this.defaultApp, ...apps.sort((a, b) => a.order - b.order)];
+        this.applications.set(allApps);
+
+        // Restaurer l'application sélectionnée depuis le localStorage
+        const savedAppId = localStorage.getItem(this.STORAGE_KEY);
+        if (savedAppId) {
+          // Compare as strings to handle numeric IDs from API
+          const savedApp = allApps.find(a => String(a.id) === savedAppId);
+          if (savedApp) {
+            this.selectApplication(savedApp);
+          }
+        }
       })
     );
   }
@@ -40,6 +53,10 @@ export class ApplicationService {
   selectApplication(app: Application | null): void {
     const selectedApp = app || this.defaultApp;
     this.selectedApplication.set(selectedApp);
+
+    // Sauvegarder dans le localStorage (as string for consistency)
+    localStorage.setItem(this.STORAGE_KEY, String(selectedApp.id));
+
     if (selectedApp?.menuItems) {
       this.menuItems.set(selectedApp.menuItems.filter(m => m.active).sort((a, b) => a.order - b.order));
     } else {
@@ -80,5 +97,18 @@ export class ApplicationService {
 
   deleteMenuItem(id: string): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/menu-items/${id}`);
+  }
+
+  // Menu Pages
+  getMenuPage(id: string): Observable<MenuPage> {
+    return this.http.get<MenuPage>(`${this.apiUrl}/pages/${id}`);
+  }
+
+  getMenuPageByMenuItem(menuItemId: string): Observable<MenuPage> {
+    return this.http.get<MenuPage>(`${this.apiUrl}/menu-items/${menuItemId}/page`);
+  }
+
+  updateMenuPage(id: string, data: Partial<MenuPage>): Observable<MenuPage> {
+    return this.http.put<MenuPage>(`${this.apiUrl}/pages/${id}`, data);
   }
 }

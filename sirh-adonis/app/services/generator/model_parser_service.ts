@@ -133,7 +133,7 @@ export default class ModelParserService {
     const files = await readdir(modelsPath)
 
     // System models that should not be listed
-    const systemModels = ['user.ts', 'entity_page.ts', 'page_field.ts']
+    const systemModels = ['user.ts', 'entity_page.ts', 'page_field.ts', 'application.ts', 'menu_item.ts', 'menu_page.ts']
 
     const entities = []
     for (const file of files) {

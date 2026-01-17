@@ -67,6 +67,36 @@
     }
 
     @if (page && !loading) {
+      <!-- Configuration du bouton d'ajout pour les pages LIST -->
+      @if (page.pageType === PageType.LIST) {
+        <div class="list-config-panel">
+          <h3>Configuration de la liste</h3>
+          <div class="config-row">
+            <div class="form-group form-checkbox">
+              <input
+                type="checkbox"
+                id="addButtonEnabled"
+                [(ngModel)]="addButtonEnabled"
+                (change)="onAddButtonConfigChange()"
+              />
+              <label for="addButtonEnabled">Afficher le bouton d'ajout</label>
+            </div>
+            @if (addButtonEnabled) {
+              <div class="form-group">
+                <label for="addButtonLabel">Label du bouton</label>
+                <input
+                  type="text"
+                  id="addButtonLabel"
+                  [(ngModel)]="addButtonLabel"
+                  (input)="onAddButtonConfigChange()"
+                  placeholder="Nouveau"
+                />
+              </div>
+            }
+          </div>
+        </div>
+      }
+
       <div class="editor-layout">
         <!-- Panneau des champs disponibles -->
         <div class="available-panel">
