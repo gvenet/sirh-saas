@@ -5,12 +5,13 @@ import { RouterLink } from '@angular/router';
 import { ApplicationService } from '../../../core/services/application.service';
 import { Application, MenuItem, CreateApplicationDto, CreateMenuItemDto } from '../../../core/models/application.model';
 import { AdminNavbarComponent } from '../../../shared/components/admin-navbar/admin-navbar.component';
+import { IconPickerComponent } from '../../../shared/components/icon-picker/icon-picker.component';
 import { GeneratorService } from '../../../generator/services/generator';
 
 @Component({
   selector: 'app-applications',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, AdminNavbarComponent],
+  imports: [CommonModule, FormsModule, RouterLink, AdminNavbarComponent, IconPickerComponent],
   templateUrl: './applications.component.html',
   styleUrl: './applications.component.css'
 })

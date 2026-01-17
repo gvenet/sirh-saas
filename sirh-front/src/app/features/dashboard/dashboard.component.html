@@ -5,6 +5,9 @@
     <div class="sidebar-dropdown">
       <button class="dropdown-trigger" (click)="toggleDropdown()">
         @if (appService.selectedApplication(); as selectedApp) {
+          @if (selectedApp.icon) {
+            <svg xmlns="http://www.w3.org/2000/svg" [attr.viewBox]="iconService.getIconViewBox(selectedApp.icon)" fill="currentColor" [innerHTML]="iconService.getIconSvg(selectedApp.icon)" class="selected-app-icon"></svg>
+          }
           <span class="selected-app">{{ selectedApp.name }}</span>
         } @else {
           <span class="placeholder">Accueil</span>
@@ -17,6 +20,9 @@
         <div class="dropdown-menu">
           @for (app of appService.applications(); track app.id) {
             <button class="dropdown-item" [class.active]="appService.selectedApplication().id === app.id" (click)="selectApplication(app)">
+              @if (app.icon) {
+                <svg xmlns="http://www.w3.org/2000/svg" [attr.viewBox]="iconService.getIconViewBox(app.icon)" fill="currentColor" [innerHTML]="iconService.getIconSvg(app.icon)" class="app-icon"></svg>
+              }
               {{ app.name }}
             </button>
           }
@@ -40,9 +46,7 @@
       @for (item of appService.menuItems(); track item.id) {
         @if (item.route !== '/dashboard') {
           <button class="sidebar-item" [class.active]="isActiveRoute(item.route, item.id, item.entityName)" (click)="navigateToMenuItem(item.route, item.entityName, item.pageId, item)">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/>
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" [attr.viewBox]="iconService.getIconViewBox(item.icon && item.icon.trim() ? item.icon : 'list')" fill="currentColor" [innerHTML]="iconService.getIconSvg(item.icon && item.icon.trim() ? item.icon : 'list')"></svg>
             {{ item.label }}
           </button>
         }

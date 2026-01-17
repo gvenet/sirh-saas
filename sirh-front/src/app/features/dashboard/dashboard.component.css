@@ -49,6 +49,18 @@
   color: white;
 }
 
+.sidebar-dropdown .dropdown-trigger .selected-app-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.dropdown-item .app-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
 .sidebar-dropdown .dropdown-arrow {
   color: white;
 }

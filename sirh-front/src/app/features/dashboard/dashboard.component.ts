@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { AuthService } from '../../core/services/auth.service';
 import { ApplicationService } from '../../core/services/application.service';
 import { EntityPageService } from '../../generator/services/entity-page.service';
+import { IconService } from '../../shared/services/icon.service';
 import { Application, MenuItem, MenuPage } from '../../core/models/application.model';
 import { EntityPage, PageField, PageType, FieldDisplayType } from '../../generator/models/entity-page.model';
 
@@ -37,6 +38,7 @@ export class DashboardComponent implements OnInit {
   constructor(
     public authService: AuthService,
     public appService: ApplicationService,
+    public iconService: IconService,
     private router: Router,
     private route: ActivatedRoute,
     private http: HttpClient,

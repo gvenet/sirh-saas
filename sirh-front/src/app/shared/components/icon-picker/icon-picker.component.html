@@ -1,0 +1,78 @@
+<div class="icon-picker-container">
+  <div class="icon-input-wrapper" (click)="openPicker()">
+    @if (selectedIcon) {
+      <div class="selected-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" [attr.viewBox]="getIconViewBox(selectedIcon)" fill="currentColor" [innerHTML]="getIconSvg(selectedIcon)"></svg>
+        <span>{{ selectedIcon }}</span>
+      </div>
+      <button type="button" class="btn-clear" (click)="clearIcon(); $event.stopPropagation()">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+        </svg>
+      </button>
+    } @else {
+      <div class="placeholder">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/>
+        </svg>
+        <span>Choisir une icône</span>
+      </div>
+    }
+  </div>
+
+  @if (showPicker) {
+    <div class="picker-backdrop" (click)="closePicker()">
+      <div class="picker-modal" (click)="$event.stopPropagation()">
+        <div class="picker-header">
+          <h3>Sélectionner une icône</h3>
+          <button type="button" class="btn-close" (click)="closePicker()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="picker-search">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+          </svg>
+          <input
+            type="text"
+            [(ngModel)]="searchTerm"
+            placeholder="Rechercher..."
+          />
+        </div>
+
+        <div class="picker-categories">
+          @for (cat of categories; track cat.id) {
+            <button
+              type="button"
+              class="category-btn"
+              [class.active]="selectedCategory === cat.id"
+              (click)="selectedCategory = cat.id"
+            >
+              {{ cat.label }}
+            </button>
+          }
+        </div>
+
+        <div class="picker-grid">
+          @for (icon of filteredIcons; track icon.name) {
+            <button
+              type="button"
+              class="icon-btn"
+              [class.selected]="selectedIcon === icon.name"
+              [title]="icon.name"
+              (click)="selectIcon(icon)"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" [attr.viewBox]="getViewBox(icon)" fill="currentColor" [innerHTML]="getSafeSvg(icon.svg)"></svg>
+            </button>
+          }
+          @if (filteredIcons.length === 0) {
+            <div class="no-results">Aucune icône trouvée</div>
+          }
+        </div>
+      </div>
+    </div>
+  }
+</div>
