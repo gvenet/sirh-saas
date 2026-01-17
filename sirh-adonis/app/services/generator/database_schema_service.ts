@@ -44,7 +44,7 @@ export default class DatabaseSchemaService {
     // Create foreign key constraints
     for (const field of fields) {
       if (field.relation?.type === 'many-to-one') {
-        const targetTable = this.toSnakeCase(field.relation.target) + 's'
+        const targetTable = field.relation.targetTable || this.toSnakeCase(field.relation.target) + 's'
         const columnName = `${this.toSnakeCase(field.name)}_id`
         await db.rawQuery(`
           ALTER TABLE "${tableName}"
@@ -93,9 +93,9 @@ export default class DatabaseSchemaService {
   }
 
   private async createJunctionTable(tableName: string, field: FieldDefinition) {
-    const targetTable = this.toSnakeCase(field.relation!.target) + 's'
-    const junctionTable = `${tableName}_${field.name}`
-
+    const targetTable = field.relation!.targetTable || this.toSnakeCase(field.relation!.target) + 's'
+    // Format: {relationName}_{table1}_{table2}
+    const junctionTable = `${field.name}_${tableName}_${targetTable}`
     const singularSource = tableName.replace(/s$/, '')
     const singularTarget = targetTable.replace(/s$/, '')
 

@@ -41,11 +41,25 @@ export default class GeneratorController {
    */
   async generateEntity({ request, response }: HttpContext) {
     const { name, tableName, fields } = request.body()
-    logger.info({ name, tableName, fields }, 'POST /generator/entities - creating entity')
+    logger.info({ name, tableName, fieldsCount: fields?.length }, 'POST /generator/entities - creating entity')
+    // Debug: log each field with relation info
+    fields?.forEach((f: any, i: number) => {
+      logger.info({ index: i, name: f.name, type: f.type, hasRelation: !!f.relation, relationType: f.relation?.type }, 'Field detail')
+    })
 
     if (!name || !fields || !Array.isArray(fields)) {
       return response.status(400).json({
         error: 'name and fields are required',
+      })
+    }
+
+    // Check for duplicate field names
+    const fieldNames = fields.map((f: { name: string }) => f.name)
+    const duplicates = fieldNames.filter((n: string, i: number) => fieldNames.indexOf(n) !== i)
+    if (duplicates.length > 0) {
+      return response.status(400).json({
+        error: 'Duplicate field names are not allowed',
+        message: `Duplicate field names: ${[...new Set(duplicates)].join(', ')}`,
       })
     }
 
@@ -64,6 +78,18 @@ export default class GeneratorController {
   async updateEntity({ params, request, response }: HttpContext) {
     const { name, tableName, fields } = request.body()
     logger.info({ name: params.name, tableName, fields }, 'PUT /generator/entities/:name - updating entity')
+
+    // Check for duplicate field names
+    if (fields && Array.isArray(fields)) {
+      const fieldNames = fields.map((f: { name: string }) => f.name)
+      const duplicates = fieldNames.filter((n: string, i: number) => fieldNames.indexOf(n) !== i)
+      if (duplicates.length > 0) {
+        return response.status(400).json({
+          error: 'Duplicate field names are not allowed',
+          message: `Duplicate field names: ${[...new Set(duplicates)].join(', ')}`,
+        })
+      }
+    }
 
     try {
       const result = await this.generatorService.updateEntity(params.name, {

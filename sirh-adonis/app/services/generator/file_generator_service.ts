@@ -179,9 +179,10 @@ ${optionalRules}
   declare ${field.name}: HasMany<typeof ${targetModel}>`
 
       case 'many-to-many': {
-        const targetTable = this.toSnakeCase(field.relation.target) + 's'
+        // Use targetTable if provided, otherwise fallback to convention
+        const targetTable = field.relation.targetTable || this.toSnakeCase(field.relation.target) + 's'
         const pivotTable = sourceTableName
-          ? this.getJunctionTableName(sourceTableName, targetTable)
+          ? this.getJunctionTableName(field.name, sourceTableName, targetTable)
           : field.name
         return `  @manyToMany(() => ${targetModel}, {
     pivotTable: '${pivotTable}',
@@ -282,7 +283,7 @@ ${optionalRules}
     const foreignKeys = fields
       .filter((f) => f.relation?.type === 'many-to-one')
       .map((field) => {
-        const targetTable = this.toSnakeCase(field.relation!.target) + 's'
+        const targetTable = field.relation!.targetTable || this.toSnakeCase(field.relation!.target) + 's'
         const columnName = this.toSnakeCase(field.name) + '_id'
         return `table.foreign('${columnName}').references('id').inTable('${targetTable}').onDelete('SET NULL')`
       })
@@ -295,8 +296,8 @@ ${optionalRules}
 
     if (manyToManyFields.length > 0) {
       for (const field of manyToManyFields) {
-        const targetTable = this.toSnakeCase(field.relation!.target) + 's'
-        const junctionTable = this.getJunctionTableName(tableName, targetTable)
+        const targetTable = field.relation!.targetTable || this.toSnakeCase(field.relation!.target) + 's'
+        const junctionTable = this.getJunctionTableName(field.name, tableName, targetTable)
         const sourceColumn = tableName.replace(/s$/, '') + '_id'
         const targetColumn = targetTable.replace(/s$/, '') + '_id'
 
@@ -337,11 +338,10 @@ export default class extends BaseSchema {
   }
 
   /**
-   * Get junction table name (alphabetically ordered for consistency)
+   * Get junction table name: {relationName}_{table1}_{table2}
    */
-  private getJunctionTableName(table1: string, table2: string): string {
-    const tables = [table1.replace(/s$/, ''), table2.replace(/s$/, '')].sort()
-    return `${tables[0]}_${tables[1]}`
+  getJunctionTableName(relationName: string, table1: string, table2: string): string {
+    return `${relationName}_${table1}_${table2}`
   }
 
   /**
@@ -375,7 +375,7 @@ export default class extends BaseSchema {
     const addForeignKeys = addedFields
       .filter((f) => f.relation?.type === 'many-to-one')
       .map((field) => {
-        const targetTable = this.toSnakeCase(field.relation!.target) + 's'
+        const targetTable = field.relation!.targetTable || this.toSnakeCase(field.relation!.target) + 's'
         const columnName = this.toSnakeCase(field.name) + '_id'
         return `table.foreign('${columnName}').references('id').inTable('${targetTable}').onDelete('SET NULL')`
       })
@@ -389,8 +389,8 @@ export default class extends BaseSchema {
     let junctionTableDown = ''
 
     for (const field of addedManyToMany) {
-      const targetTable = this.toSnakeCase(field.relation!.target) + 's'
-      const junctionTable = this.getJunctionTableName(tableName, targetTable)
+      const targetTable = field.relation!.targetTable || this.toSnakeCase(field.relation!.target) + 's'
+      const junctionTable = this.getJunctionTableName(field.name, tableName, targetTable)
       const sourceColumn = tableName.replace(/s$/, '') + '_id'
       const targetColumn = targetTable.replace(/s$/, '') + '_id'
 
@@ -408,8 +408,8 @@ export default class extends BaseSchema {
     }
 
     for (const field of removedManyToMany) {
-      const targetTable = this.toSnakeCase(field.relation!.target) + 's'
-      const junctionTable = this.getJunctionTableName(tableName, targetTable)
+      const targetTable = field.relation!.targetTable || this.toSnakeCase(field.relation!.target) + 's'
+      const junctionTable = this.getJunctionTableName(field.name, tableName, targetTable)
       const sourceColumn = tableName.replace(/s$/, '') + '_id'
       const targetColumn = targetTable.replace(/s$/, '') + '_id'
 

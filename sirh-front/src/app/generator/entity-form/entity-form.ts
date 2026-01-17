@@ -248,6 +248,14 @@ export class EntityFormComponent implements OnInit {
       return;
     }
 
+    // Check for duplicate field names
+    const fieldNames = this.fields.controls.map(ctrl => ctrl.get('name')?.value);
+    const duplicates = fieldNames.filter((name, index) => fieldNames.indexOf(name) !== index);
+    if (duplicates.length > 0) {
+      this.error = `Duplicate field names are not allowed: ${[...new Set(duplicates)].join(', ')}`;
+      return;
+    }
+
     this.loading = true;
     this.error = null;
     this.success = null;
@@ -257,7 +265,9 @@ export class EntityFormComponent implements OnInit {
 
     // Transform fields to backend format
     const transformedFields = formValue.fields.map((field: any) => {
-      if (this.isRelationField(field.type)) {
+      const isRelation = isRelationType(field.type);
+      console.log('Field transform:', field.name, 'type:', field.type, 'isRelation:', isRelation);
+      if (isRelation) {
         // Convert relation field to backend format
         return {
           name: field.name,
@@ -279,6 +289,7 @@ export class EntityFormComponent implements OnInit {
         defaultValue: field.defaultValue || undefined,
       };
     });
+    console.log('Transformed fields:', JSON.stringify(transformedFields, null, 2));
 
     const entityDto = {
       name: formValue.name,

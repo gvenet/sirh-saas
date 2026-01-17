@@ -56,13 +56,16 @@ export default class RelationService {
       }
 
       if (field.relation.type === 'many-to-many') {
+        // Use targetTable from field if available, otherwise derive from model name
+        const targetTable = field.relation.targetTable || this.toSnakeCase(targetModel) + 's'
         targetContent = this.addManyToManyInverse(
           targetContent,
           sourceModel,
           sourceFile,
           sourceTable,
-          targetModel,
-          inverseName
+          targetTable,
+          inverseName,
+          field.name // Le nom de la relation originale
         )
         await writeFile(targetPath, targetContent)
         logger.info({ targetModel, inverseName, type: 'many-to-many' }, 'Added inverse relation')
@@ -79,8 +82,9 @@ export default class RelationService {
     sourceModel: string,
     sourceFile: string,
     sourceTable: string,
-    targetModel: string,
-    inverseName: string
+    targetTable: string,
+    inverseName: string,
+    originalRelationName: string
   ): string {
     // Add manyToMany import if needed
     if (!content.includes('manyToMany')) {
@@ -96,10 +100,8 @@ export default class RelationService {
       content = content.replace("import { BaseModel", `${importStatement}\nimport { BaseModel`)
     }
 
-    // Calculate pivot table name (alphabetically ordered)
-    const targetTable = this.toSnakeCase(targetModel) + 's'
-    const tables = [sourceTable.replace(/s$/, ''), targetTable.replace(/s$/, '')].sort()
-    const pivotTable = `${tables[0]}_${tables[1]}`
+    // Calculate pivot table name: {relationName}_{table1}_{table2}
+    const pivotTable = `${originalRelationName}_${sourceTable}_${targetTable}`
 
     // Add inverse relation before the closing brace
     const inverseRelation = `

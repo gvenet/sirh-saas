@@ -18,6 +18,7 @@ export interface FieldDefinition {
   relation?: {
     type: 'many-to-one' | 'one-to-many' | 'many-to-many'
     target: string
+    targetTable?: string // Actual table name of the target entity
     inverseSide?: string
   }
 }
@@ -40,10 +41,55 @@ export default class GeneratorService {
   ) {}
 
   /**
+   * Normalize fields to ensure consistent format and resolve target table names
+   * Handles both formats:
+   * - { name, type: 'many-to-many', relationTarget: 'Foo' } (frontend format)
+   * - { name, type: 'number', relation: { type: 'many-to-many', target: 'Foo' } } (backend format)
+   */
+  private normalizeFields(fields: any[]): FieldDefinition[] {
+    const relationTypes = ['many-to-one', 'one-to-many', 'many-to-many', 'one-to-one']
+
+    return fields.map((field) => {
+      // If already in correct format (has relation object)
+      if (field.relation) {
+        // Resolve target table name if not already set
+        if (!field.relation.targetTable && field.relation.target) {
+          field.relation.targetTable = this.modelParser.extractTableName(field.relation.target)
+        }
+        return field as FieldDefinition
+      }
+
+      // If type is a relation type but no relation object, convert it
+      if (relationTypes.includes(field.type)) {
+        const targetTable = field.relationTarget
+          ? this.modelParser.extractTableName(field.relationTarget)
+          : undefined
+
+        return {
+          name: field.name,
+          type: 'number',
+          required: field.required,
+          unique: field.unique,
+          relation: {
+            type: field.type as 'many-to-one' | 'one-to-many' | 'many-to-many',
+            target: field.relationTarget,
+            targetTable,
+            inverseSide: field.relationInverse || undefined,
+          },
+        } as FieldDefinition
+      }
+
+      // Regular field
+      return field as FieldDefinition
+    })
+  }
+
+  /**
    * Generate a complete entity with model, controller, validator, migration and routes
    */
   async generateEntity(definition: EntityDefinition) {
-    const { name, tableName, fields } = definition
+    const { name, tableName } = definition
+    const fields = this.normalizeFields(definition.fields)
     const modelName = this.toPascalCase(name)
     const fileName = this.toSnakeCase(name)
 
@@ -124,18 +170,24 @@ export default class GeneratorService {
   async updateEntity(oldName: string, definition: EntityDefinition) {
     logger.info({ oldName, newName: definition.name }, 'Starting entity update')
 
+    // Normalize fields to handle both frontend and backend formats
+    const normalizedDefinition = {
+      ...definition,
+      fields: this.normalizeFields(definition.fields),
+    }
+
     const oldEntity = await this.modelParser.getEntity(oldName)
-    const sameTable = oldEntity?.tableName === definition.tableName
+    const sameTable = oldEntity?.tableName === normalizedDefinition.tableName
 
     // If same table and same name, update files and generate migration for schema changes
-    if (sameTable && oldName.toLowerCase() === definition.name.toLowerCase()) {
-      return this.updateEntityInPlace(oldEntity, definition)
+    if (sameTable && oldName.toLowerCase() === normalizedDefinition.name.toLowerCase()) {
+      return this.updateEntityInPlace(oldEntity, normalizedDefinition)
     }
 
     // Different table or name - delete old and create new
     await this.deleteEntity(oldName, !sameTable)
     await new Promise((resolve) => setTimeout(resolve, 500))
-    return this.generateEntity(definition)
+    return this.generateEntity(normalizedDefinition)
   }
 
   private async updateEntityInPlace(
