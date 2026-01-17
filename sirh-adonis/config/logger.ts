@@ -1,6 +1,12 @@
 import env from '#start/env'
 import app from '@adonisjs/core/services/app'
 import { defineConfig, targets } from '@adonisjs/core/logger'
+import { mkdirSync } from 'node:fs'
+import path from 'node:path'
+
+const logsDir = app.makePath('logs')
+mkdirSync(logsDir, { recursive: true })
+const logFile = path.join(logsDir, 'app.log')
 
 const loggerConfig = defineConfig({
   default: 'app',
@@ -18,6 +24,7 @@ const loggerConfig = defineConfig({
         targets: targets()
           .pushIf(!app.inProduction, targets.pretty())
           .pushIf(app.inProduction, targets.file({ destination: 1 }))
+          .push(targets.file({ destination: logFile }))
           .toArray(),
       },
     },

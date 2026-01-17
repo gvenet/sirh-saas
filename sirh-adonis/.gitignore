@@ -26,3 +26,6 @@ yarn-error.log
 
 # Generated migrations (keep system migrations with 1768* prefix)
 database/migrations/2026*.ts
+
+# Logs
+logs
