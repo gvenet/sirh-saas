@@ -39,7 +39,7 @@ export default class FileGeneratorService {
     // Generate relation declarations
     const relationDeclarations = fields
       .filter((f) => f.relation)
-      .map((field) => this.generateRelationDeclaration(field))
+      .map((field) => this.generateRelationDeclaration(field, tableName))
       .join('\n\n')
 
     // Add relation model imports
@@ -164,11 +164,10 @@ ${optionalRules}
   declare ${field.name}: ${tsType}${nullable}`
   }
 
-  private generateRelationDeclaration(field: FieldDefinition): string {
+  private generateRelationDeclaration(field: FieldDefinition, sourceTableName?: string): string {
     if (!field.relation) return ''
 
     const targetModel = this.toPascalCase(field.relation.target)
-    const targetFile = this.toSnakeCase(field.relation.target)
 
     switch (field.relation.type) {
       case 'many-to-one':
@@ -179,9 +178,16 @@ ${optionalRules}
         return `  @hasMany(() => ${targetModel})
   declare ${field.name}: HasMany<typeof ${targetModel}>`
 
-      case 'many-to-many':
-        return `  @manyToMany(() => ${targetModel})
+      case 'many-to-many': {
+        const targetTable = this.toSnakeCase(field.relation.target) + 's'
+        const pivotTable = sourceTableName
+          ? this.getJunctionTableName(sourceTableName, targetTable)
+          : field.name
+        return `  @manyToMany(() => ${targetModel}, {
+    pivotTable: '${pivotTable}',
+  })
   declare ${field.name}: ManyToMany<typeof ${targetModel}>`
+      }
 
       default:
         return ''
@@ -282,6 +288,32 @@ ${optionalRules}
       })
       .join('\n      ')
 
+    // Generate junction table creation for many-to-many relations
+    const manyToManyFields = fields.filter((f) => f.relation?.type === 'many-to-many')
+    let junctionTableCode = ''
+    let junctionTableDrop = ''
+
+    if (manyToManyFields.length > 0) {
+      for (const field of manyToManyFields) {
+        const targetTable = this.toSnakeCase(field.relation!.target) + 's'
+        const junctionTable = this.getJunctionTableName(tableName, targetTable)
+        const sourceColumn = tableName.replace(/s$/, '') + '_id'
+        const targetColumn = targetTable.replace(/s$/, '') + '_id'
+
+        junctionTableCode += `
+
+    // Junction table for many-to-many relation: ${field.name}
+    this.schema.createTable('${junctionTable}', (table) => {
+      table.integer('${sourceColumn}').unsigned().notNullable().references('id').inTable('${tableName}').onDelete('CASCADE')
+      table.integer('${targetColumn}').unsigned().notNullable().references('id').inTable('${targetTable}').onDelete('CASCADE')
+      table.primary(['${sourceColumn}', '${targetColumn}'])
+    })`
+
+        junctionTableDrop += `
+    this.schema.dropTableIfExists('${junctionTable}')`
+      }
+    }
+
     return `import { BaseSchema } from '@adonisjs/lucid/schema'
 
 export default class extends BaseSchema {
@@ -294,11 +326,159 @@ export default class extends BaseSchema {
       table.timestamp('created_at')
       table.timestamp('updated_at')
       ${foreignKeys}
-    })
+    })${junctionTableCode}
   }
 
-  async down() {
+  async down() {${junctionTableDrop}
     this.schema.dropTable(this.tableName)
+  }
+}
+`
+  }
+
+  /**
+   * Get junction table name (alphabetically ordered for consistency)
+   */
+  private getJunctionTableName(table1: string, table2: string): string {
+    const tables = [table1.replace(/s$/, ''), table2.replace(/s$/, '')].sort()
+    return `${tables[0]}_${tables[1]}`
+  }
+
+  /**
+   * Generate migration content for altering a table (adding/removing columns and relations)
+   */
+  generateAlterMigration(
+    tableName: string,
+    addedFields: FieldDefinition[],
+    removedFields: FieldDefinition[],
+    sourceTableName: string
+  ): string {
+    const addColumns = addedFields
+      .filter((f) => !f.relation || f.relation.type === 'many-to-one')
+      .map((field) => {
+        const col = this.getMigrationColumn(field)
+        return `table.${col.replace(/^table\./, '')}`
+      })
+      .join('\n        ')
+
+    const removeColumns = removedFields
+      .filter((f) => !f.relation || f.relation.type === 'many-to-one')
+      .map((field) => {
+        const columnName = field.relation?.type === 'many-to-one'
+          ? this.toSnakeCase(field.name) + '_id'
+          : this.toSnakeCase(field.name)
+        return `table.dropColumn('${columnName}')`
+      })
+      .join('\n        ')
+
+    // Handle foreign keys for new many-to-one relations
+    const addForeignKeys = addedFields
+      .filter((f) => f.relation?.type === 'many-to-one')
+      .map((field) => {
+        const targetTable = this.toSnakeCase(field.relation!.target) + 's'
+        const columnName = this.toSnakeCase(field.name) + '_id'
+        return `table.foreign('${columnName}').references('id').inTable('${targetTable}').onDelete('SET NULL')`
+      })
+      .join('\n        ')
+
+    // Handle junction tables for many-to-many
+    const addedManyToMany = addedFields.filter((f) => f.relation?.type === 'many-to-many')
+    const removedManyToMany = removedFields.filter((f) => f.relation?.type === 'many-to-many')
+
+    let junctionTableUp = ''
+    let junctionTableDown = ''
+
+    for (const field of addedManyToMany) {
+      const targetTable = this.toSnakeCase(field.relation!.target) + 's'
+      const junctionTable = this.getJunctionTableName(tableName, targetTable)
+      const sourceColumn = tableName.replace(/s$/, '') + '_id'
+      const targetColumn = targetTable.replace(/s$/, '') + '_id'
+
+      junctionTableUp += `
+
+    // Create junction table for many-to-many: ${field.name}
+    this.schema.createTable('${junctionTable}', (table) => {
+      table.integer('${sourceColumn}').unsigned().notNullable().references('id').inTable('${tableName}').onDelete('CASCADE')
+      table.integer('${targetColumn}').unsigned().notNullable().references('id').inTable('${targetTable}').onDelete('CASCADE')
+      table.primary(['${sourceColumn}', '${targetColumn}'])
+    })`
+
+      junctionTableDown += `
+    this.schema.dropTableIfExists('${junctionTable}')`
+    }
+
+    for (const field of removedManyToMany) {
+      const targetTable = this.toSnakeCase(field.relation!.target) + 's'
+      const junctionTable = this.getJunctionTableName(tableName, targetTable)
+      const sourceColumn = tableName.replace(/s$/, '') + '_id'
+      const targetColumn = targetTable.replace(/s$/, '') + '_id'
+
+      junctionTableDown += `
+
+    // Recreate junction table for many-to-many: ${field.name}
+    this.schema.createTable('${junctionTable}', (table) => {
+      table.integer('${sourceColumn}').unsigned().notNullable().references('id').inTable('${tableName}').onDelete('CASCADE')
+      table.integer('${targetColumn}').unsigned().notNullable().references('id').inTable('${targetTable}').onDelete('CASCADE')
+      table.primary(['${sourceColumn}', '${targetColumn}'])
+    })`
+
+      junctionTableUp += `
+    this.schema.dropTableIfExists('${junctionTable}')`
+    }
+
+    const hasAlterUp = addColumns || removeColumns || addForeignKeys
+    const hasAlterDown = addColumns || removeColumns
+
+    let upContent = ''
+    let downContent = ''
+
+    if (hasAlterUp) {
+      upContent = `
+    this.schema.alterTable(this.tableName, (table) => {
+        ${addColumns}
+        ${removeColumns}
+        ${addForeignKeys}
+    })`
+    }
+
+    if (hasAlterDown) {
+      // In down(), we reverse: drop added columns, recreate removed columns
+      const downAddColumns = removedFields
+        .filter((f) => !f.relation || f.relation.type === 'many-to-one')
+        .map((field) => {
+          const col = this.getMigrationColumn(field)
+          return `table.${col.replace(/^table\./, '')}`
+        })
+        .join('\n        ')
+
+      const downRemoveColumns = addedFields
+        .filter((f) => !f.relation || f.relation.type === 'many-to-one')
+        .map((field) => {
+          const columnName = field.relation?.type === 'many-to-one'
+            ? this.toSnakeCase(field.name) + '_id'
+            : this.toSnakeCase(field.name)
+          return `table.dropColumn('${columnName}')`
+        })
+        .join('\n        ')
+
+      if (downAddColumns || downRemoveColumns) {
+        downContent = `
+    this.schema.alterTable(this.tableName, (table) => {
+        ${downAddColumns}
+        ${downRemoveColumns}
+    })`
+      }
+    }
+
+    return `import { BaseSchema } from '@adonisjs/lucid/schema'
+
+export default class extends BaseSchema {
+  protected tableName = '${tableName}'
+
+  async up() {${upContent}${junctionTableUp}
+  }
+
+  async down() {${junctionTableDown}${downContent}
   }
 }
 `

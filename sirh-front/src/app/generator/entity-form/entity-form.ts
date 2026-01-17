@@ -97,10 +97,24 @@ export class EntityFormComponent implements OnInit {
 
         // Clear existing fields and add loaded ones
         this.fields.clear();
-        entity.fields.forEach(field => {
-          const group = this.createFieldGroup(field);
+        entity.fields.forEach((field: any) => {
+          // Transform backend format to form format
+          const formField = field.relation
+            ? {
+                name: field.name,
+                type: field.relation.type, // Use relation type as the field type
+                required: field.required,
+                unique: field.unique,
+                relationTarget: field.relation.target,
+                relationInverse: field.relation.inverseSide || '',
+                onDelete: 'SET NULL',
+                eager: false,
+              }
+            : field;
+
+          const group = this.createFieldGroup(formField);
           // Configurer les listeners pour les relations existantes
-          if (isRelationType(field.type)) {
+          if (field.relation || isRelationType(formField.type)) {
             this.setupRelationFieldListeners(group);
           }
           this.fields.push(group);
@@ -241,9 +255,40 @@ export class EntityFormComponent implements OnInit {
     // getRawValue() inclut les champs désactivés (name, tableName en mode édition)
     const formValue = this.entityForm.getRawValue();
 
+    // Transform fields to backend format
+    const transformedFields = formValue.fields.map((field: any) => {
+      if (this.isRelationField(field.type)) {
+        // Convert relation field to backend format
+        return {
+          name: field.name,
+          type: 'number', // Relations are stored as foreign keys
+          required: field.required,
+          relation: {
+            type: field.type,
+            target: field.relationTarget,
+            inverseSide: field.relationInverse || undefined,
+          }
+        };
+      }
+      // Regular field
+      return {
+        name: field.name,
+        type: field.type,
+        required: field.required,
+        unique: field.unique,
+        defaultValue: field.defaultValue || undefined,
+      };
+    });
+
+    const entityDto = {
+      name: formValue.name,
+      tableName: formValue.tableName,
+      fields: transformedFields,
+    };
+
     const operation = this.isEditMode && this.originalEntityName
-      ? this.generatorService.updateEntity(this.originalEntityName, formValue)
-      : this.generatorService.generateEntity(formValue);
+      ? this.generatorService.updateEntity(this.originalEntityName, entityDto)
+      : this.generatorService.generateEntity(entityDto);
 
     operation.subscribe({
       next: (response) => {

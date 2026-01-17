@@ -21,6 +21,9 @@ import router from '@adonisjs/core/services/router'
 
 
 
+
+
+
 import { middleware } from './kernel.js'
 
 const GeneratorController = () => import('#controllers/generator_controller')
@@ -71,3 +74,5 @@ router.group(() => {
   router.delete('/fields/:fieldId', [EntityPageController, 'deleteField'])
   router.put('/:pageId/fields/reorder', [EntityPageController, 'reorderFields'])
 }).prefix('/entity-pages')
+
+
