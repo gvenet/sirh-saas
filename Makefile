@@ -62,8 +62,8 @@ migrate-reset:
 	rm -f sirh-adonis/database/migrations/2026*.ts
 	@echo "🧹 Suppression des fichiers d'entités générés..."
 	@# Keep only system files, remove generated entities
-	@find sirh-adonis/app/models -name "*.ts" ! -name "user.ts" ! -name "entity_page.ts" ! -name "page_field.ts" -delete 2>/dev/null || true
-	@find sirh-adonis/app/controllers -name "*_controller.ts" ! -name "generator_controller.ts" ! -name "auth_controller.ts" ! -name "entity_page_controller.ts" -delete 2>/dev/null || true
+	@find sirh-adonis/app/models -name "*.ts" ! -name "user.ts" ! -name "entity_page.ts" ! -name "page_field.ts" ! -name "application.ts" ! -name "menu_item.ts" ! -name "menu_page.ts" -delete 2>/dev/null || true
+	@find sirh-adonis/app/controllers -name "*_controller.ts" ! -name "generator_controller.ts" ! -name "auth_controller.ts" ! -name "entity_page_controller.ts" ! -name "applications_controller.ts" -delete 2>/dev/null || true
 	@find sirh-adonis/app/validators -name "*_validator.ts" ! -name "auth_validator.ts" -delete 2>/dev/null || true
 	@echo "🧹 Nettoyage du fichier routes.ts..."
 	@cd sirh-adonis && node -e "\
