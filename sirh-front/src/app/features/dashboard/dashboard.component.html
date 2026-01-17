@@ -43,36 +43,37 @@
         Dashboard
       </button>
 
-      @for (item of appService.menuItems(); track item.id) {
-        @if (item.route !== '/dashboard') {
-          <!-- Menu with children (has expand/collapse) -->
-          @if (hasChildren(item)) {
-            <div class="sidebar-menu-group">
-              <button class="sidebar-item has-children" [class.expanded]="isMenuExpanded(item.id)" (click)="toggleSubmenu(item.id, $event)">
+      <!-- Recursive menu template -->
+      <ng-template #menuItemTemplate let-items="items" let-depth="depth">
+        @for (item of items; track item.id) {
+          @if (item.route !== '/dashboard') {
+            <!-- Menu with children (has expand/collapse) -->
+            @if (hasChildren(item)) {
+              <div class="sidebar-menu-group" [style.padding-left.rem]="depth * 0.75">
+                <button class="sidebar-item has-children" [class.expanded]="isMenuExpanded(item.id)" (click)="toggleSubmenu(item.id, $event)">
+                  <svg xmlns="http://www.w3.org/2000/svg" [attr.viewBox]="iconService.getIconViewBox(item.icon && item.icon.trim() ? item.icon : 'list')" fill="currentColor" [innerHTML]="iconService.getIconSvg(item.icon && item.icon.trim() ? item.icon : 'list')"></svg>
+                  {{ item.label }}
+                  <svg class="expand-icon" xmlns="http://www.w3.org/2000/svg" [attr.viewBox]="iconService.getIconViewBox('expand')" fill="currentColor" [innerHTML]="iconService.getIconSvg('expand')"></svg>
+                </button>
+                @if (isMenuExpanded(item.id)) {
+                  <div class="submenu-container">
+                    <ng-container *ngTemplateOutlet="menuItemTemplate; context: { items: item.children, depth: depth + 1 }"></ng-container>
+                  </div>
+                }
+              </div>
+            } @else {
+              <!-- Regular menu item without children -->
+              <button class="sidebar-item" [class.active]="isActiveRoute(item.route, item.id, item.entityName)" [style.padding-left.rem]="depth * 0.75 + 1" (click)="navigateToMenuItem(item.route, item.entityName, item.pageId, item)">
                 <svg xmlns="http://www.w3.org/2000/svg" [attr.viewBox]="iconService.getIconViewBox(item.icon && item.icon.trim() ? item.icon : 'list')" fill="currentColor" [innerHTML]="iconService.getIconSvg(item.icon && item.icon.trim() ? item.icon : 'list')"></svg>
                 {{ item.label }}
-                <svg class="expand-icon" xmlns="http://www.w3.org/2000/svg" [attr.viewBox]="iconService.getIconViewBox('expand')" fill="currentColor" [innerHTML]="iconService.getIconSvg('expand')"></svg>
               </button>
-              @if (isMenuExpanded(item.id)) {
-                <div class="submenu-container">
-                  @for (child of item.children; track child.id) {
-                    <button class="sidebar-item submenu-item" [class.active]="isActiveRoute(child.route, child.id, child.entityName)" (click)="navigateToMenuItem(child.route, child.entityName, child.pageId, child)">
-                      <svg xmlns="http://www.w3.org/2000/svg" [attr.viewBox]="iconService.getIconViewBox(child.icon && child.icon.trim() ? child.icon : 'list')" fill="currentColor" [innerHTML]="iconService.getIconSvg(child.icon && child.icon.trim() ? child.icon : 'list')"></svg>
-                      {{ child.label }}
-                    </button>
-                  }
-                </div>
-              }
-            </div>
-          } @else {
-            <!-- Regular menu item without children -->
-            <button class="sidebar-item" [class.active]="isActiveRoute(item.route, item.id, item.entityName)" (click)="navigateToMenuItem(item.route, item.entityName, item.pageId, item)">
-              <svg xmlns="http://www.w3.org/2000/svg" [attr.viewBox]="iconService.getIconViewBox(item.icon && item.icon.trim() ? item.icon : 'list')" fill="currentColor" [innerHTML]="iconService.getIconSvg(item.icon && item.icon.trim() ? item.icon : 'list')"></svg>
-              {{ item.label }}
-            </button>
+            }
           }
         }
-      }
+      </ng-template>
+
+      <!-- Render root menu items -->
+      <ng-container *ngTemplateOutlet="menuItemTemplate; context: { items: appService.menuItems(), depth: 0 }"></ng-container>
     </nav>
   </aside>
 

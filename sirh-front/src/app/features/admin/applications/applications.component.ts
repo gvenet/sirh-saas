@@ -118,20 +118,47 @@ export class ApplicationsComponent implements OnInit {
     this.showMenuModal = true;
   }
 
-  // Get parent menu items (now backend returns only parents with children nested)
-  getParentMenuItems(app: Application): MenuItem[] {
-    return app.menuItems || [];
+  // Build menu tree from flat list
+  buildMenuTree(items: MenuItem[], parentId: string | null = null): MenuItem[] {
+    return items
+      .filter(item => {
+        const itemParentId = item.parentId;
+        if (parentId === null) {
+          return !itemParentId || itemParentId === '' || itemParentId === '0' || Number(itemParentId) === 0;
+        }
+        return String(itemParentId) === String(parentId);
+      })
+      .sort((a, b) => a.order - b.order)
+      .map(item => ({
+        ...item,
+        children: this.buildMenuTree(items, item.id)
+      }));
+  }
+
+  // Get root menu items (tree structure)
+  getRootMenuItems(app: Application): MenuItem[] {
+    return this.buildMenuTree(app.menuItems || []);
+  }
+
+  // Get all menu items as flat list (for parent dropdown)
+  getAllMenuItemsFlat(app: Application, excludeId?: string): MenuItem[] {
+    const flatList: MenuItem[] = [];
+    const addToList = (items: MenuItem[], depth: number = 0) => {
+      for (const item of items) {
+        if (excludeId && String(item.id) === String(excludeId)) continue;
+        flatList.push({ ...item, label: '—'.repeat(depth) + ' ' + item.label });
+        if (item.children && item.children.length > 0) {
+          addToList(item.children, depth + 1);
+        }
+      }
+    };
+    addToList(this.buildMenuTree(app.menuItems || []));
+    return flatList;
   }
 
   // Get submenu items for a parent (now use nested children)
   getSubMenuItems(menu: MenuItem): MenuItem[] {
     return menu.children || [];
-  }
-
-  // Get label for parent menu
-  getParentLabel(parentId: string, app: Application): string {
-    const parent = (app.menuItems || []).find(item => String(item.id) === String(parentId));
-    return parent?.label || '';
   }
 
   closeMenuModal(): void {

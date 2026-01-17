@@ -7,15 +7,10 @@ export default class ApplicationService {
    * Get all applications with their menu items and pages
    */
   async findAllApplications() {
+    // Load all menu items (flat list), tree structure will be built on frontend
     return Application.query()
       .preload('menuItems', (query) => {
-        query
-          .whereNull('parentId')
-          .orderBy('order', 'asc')
-          .preload('menuPage')
-          .preload('children', (childQuery) => {
-            childQuery.orderBy('order', 'asc').preload('menuPage')
-          })
+        query.orderBy('order', 'asc').preload('menuPage')
       })
       .orderBy('order', 'asc')
   }
@@ -24,16 +19,11 @@ export default class ApplicationService {
    * Get a specific application by ID
    */
   async findApplicationById(id: number) {
+    // Load all menu items (flat list), tree structure will be built on frontend
     return Application.query()
       .where('id', id)
       .preload('menuItems', (query) => {
-        query
-          .whereNull('parentId')
-          .orderBy('order', 'asc')
-          .preload('menuPage')
-          .preload('children', (childQuery) => {
-            childQuery.orderBy('order', 'asc').preload('menuPage')
-          })
+        query.orderBy('order', 'asc').preload('menuPage')
       })
       .firstOrFail()
   }

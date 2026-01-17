@@ -76,72 +76,53 @@
 
             <div class="menu-list">
               @if (app.menuItems && app.menuItems.length > 0) {
-                @for (menu of getParentMenuItems(app); track menu.id) {
-                  <div class="menu-item-group">
-                    <div class="menu-item">
-                      <div class="menu-info">
-                        <span class="menu-label">{{ menu.label }}</span>
-                        @if (menu.entityName) {
-                          <span class="menu-entity">Entité: {{ menu.entityName }}</span>
-                        }
-                        @if (menu.route) {
-                          <span class="menu-route">Route: {{ menu.route }}</span>
-                        }
-                      </div>
-                      <div class="menu-actions">
-                        <button class="btn-icon-sm btn-add" title="Ajouter un sous-menu" (click)="openMenuModal(app, undefined, menu.id)">
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                          </svg>
-                        </button>
-                        <button class="btn-icon-sm btn-edit" (click)="openMenuModal(app, menu)">
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                          </svg>
-                        </button>
-                        <button class="btn-icon-sm btn-delete" (click)="deleteMenu(menu)">
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                    <!-- Sous-menus -->
-                    @if (getSubMenuItems(menu).length > 0) {
-                      <div class="submenu-list">
-                        @for (submenu of getSubMenuItems(menu); track submenu.id) {
-                          <div class="menu-item submenu-item">
-                            <div class="menu-info">
-                              <span class="menu-label">{{ submenu.label }}</span>
-                              @if (submenu.entityName) {
-                                <span class="menu-entity">Entité: {{ submenu.entityName }}</span>
-                              }
-                              @if (submenu.route) {
-                                <span class="menu-route">Route: {{ submenu.route }}</span>
-                              }
-                            </div>
-                            <div class="menu-actions">
-                              <button class="btn-icon-sm btn-edit" (click)="openMenuModal(app, submenu)">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                                  <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                                </svg>
-                              </button>
-                              <button class="btn-icon-sm btn-delete" (click)="deleteMenu(submenu)">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                                  <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                                </svg>
-                              </button>
-                            </div>
-                          </div>
-                        }
-                      </div>
-                    }
-                  </div>
-                }
+                <ng-container *ngTemplateOutlet="menuTreeTemplate; context: { items: getRootMenuItems(app), app: app, depth: 0 }"></ng-container>
               } @else {
                 <div class="menu-empty">Aucun menu configuré</div>
               }
             </div>
+
+            <!-- Recursive menu template -->
+            <ng-template #menuTreeTemplate let-items="items" let-app="app" let-depth="depth">
+              @for (menu of items; track menu.id) {
+                <div class="menu-item-group" [style.margin-left.rem]="depth * 1.5">
+                  <div class="menu-item" [class.submenu-item]="depth > 0">
+                    <div class="menu-info">
+                      <span class="menu-label">{{ menu.label }}</span>
+                      @if (menu.entityName) {
+                        <span class="menu-entity">Entité: {{ menu.entityName }}</span>
+                      }
+                      @if (menu.route) {
+                        <span class="menu-route">Route: {{ menu.route }}</span>
+                      }
+                    </div>
+                    <div class="menu-actions">
+                      <button class="btn-icon-sm btn-add" title="Ajouter un sous-menu" (click)="openMenuModal(app, undefined, menu.id)">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                        </svg>
+                      </button>
+                      <button class="btn-icon-sm btn-edit" (click)="openMenuModal(app, menu)">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                        </svg>
+                      </button>
+                      <button class="btn-icon-sm btn-delete" (click)="deleteMenu(menu)">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <!-- Recursive children -->
+                  @if (menu.children && menu.children.length > 0) {
+                    <div class="submenu-list">
+                      <ng-container *ngTemplateOutlet="menuTreeTemplate; context: { items: menu.children, app: app, depth: depth + 1 }"></ng-container>
+                    </div>
+                  }
+                </div>
+              }
+            </ng-template>
           </div>
         }
       </div>
@@ -217,10 +198,8 @@
             <select [(ngModel)]="menuForm.parentId">
               <option value="">-- Menu principal --</option>
               @if (selectedAppForMenu) {
-                @for (parent of getParentMenuItems(selectedAppForMenu); track parent.id) {
-                  @if (parent.id !== editingMenu?.id) {
-                    <option [value]="parent.id">{{ parent.label }}</option>
-                  }
+                @for (parent of getAllMenuItemsFlat(selectedAppForMenu, editingMenu?.id); track parent.id) {
+                  <option [value]="parent.id">{{ parent.label }}</option>
                 }
               }
             </select>

@@ -58,19 +58,9 @@ export class ApplicationService {
     localStorage.setItem(this.STORAGE_KEY, String(selectedApp.id));
 
     if (selectedApp?.menuItems) {
-      // Backend now returns only parent menus with children preloaded
-      // Just filter active items and their active children
-      const activeMenus = selectedApp.menuItems
-        .filter(m => m.active)
-        .sort((a, b) => a.order - b.order)
-        .map(menu => ({
-          ...menu,
-          children: (menu.children || [])
-            .filter(c => c.active)
-            .sort((a, b) => a.order - b.order)
-        }));
-
-      this.menuItems.set(activeMenus);
+      // Build recursive tree structure from flat list
+      const menuTree = this.buildMenuTree(selectedApp.menuItems.filter(m => m.active));
+      this.menuItems.set(menuTree);
     } else {
       this.menuItems.set([]);
     }
@@ -122,5 +112,23 @@ export class ApplicationService {
 
   updateMenuPage(id: string, data: Partial<MenuPage>): Observable<MenuPage> {
     return this.http.put<MenuPage>(`${this.apiUrl}/pages/${id}`, data);
+  }
+
+  // Build recursive menu tree from flat list
+  private buildMenuTree(items: MenuItem[], parentId: string | null = null): MenuItem[] {
+    return items
+      .filter(item => {
+        const itemParentId = item.parentId;
+        // Match items where parentId matches (handle null, undefined, empty string, 0)
+        if (parentId === null) {
+          return !itemParentId || itemParentId === '' || itemParentId === '0' || Number(itemParentId) === 0;
+        }
+        return String(itemParentId) === String(parentId);
+      })
+      .sort((a, b) => a.order - b.order)
+      .map(item => ({
+        ...item,
+        children: this.buildMenuTree(items, item.id)
+      }));
   }
 }
