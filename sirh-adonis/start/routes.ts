@@ -8,7 +8,6 @@
 */
 
 import router from '@adonisjs/core/services/router'
-const AaController = () => import('#controllers/aa_controller')
 
 import { middleware } from './kernel.js'
 
@@ -16,8 +15,6 @@ const GeneratorController = () => import('#controllers/generator_controller')
 const AuthController = () => import('#controllers/auth_controller')
 const EntityPageController = () => import('#controllers/entity_page_controller')
 const ApplicationController = () => import('#controllers/applications_controller')
-
-
 
 // Health check
 router.get('/', async () => {
@@ -86,20 +83,3 @@ router.group(() => {
 }).prefix('/applications')
 
 
-
-
-
-
-
-
-
-
-
-// Aa routes
-router.group(() => {
-  router.get('/', [AaController, 'index'])
-  router.get('/:id', [AaController, 'show'])
-  router.post('/', [AaController, 'store'])
-  router.put('/:id', [AaController, 'update'])
-  router.delete('/:id', [AaController, 'destroy'])
-}).prefix('/aa')

@@ -69,8 +69,8 @@ migrate-reset:
 	@cd sirh-adonis && node -e "\
 		const fs=require('fs');\
 		let c=fs.readFileSync('start/routes.ts','utf8');\
-		c=c.replace(/const (?!Generator|Auth|EntityPage)\\w+Controller = \\(\\) => import\\('#controllers\\/[^']+_controller'\\)\\n/g,'');\
-		c=c.replace(/\\n\\/\\/ (?!Auth|Generator|Entity Pages)\\w+ routes[\\s\\S]*?\\.prefix\\('\\/[^']+'\\)/g,'');\
+		c=c.replace(/const (?!Generator|Auth|EntityPage|Application)\\w+Controller = \\(\\) => import\\('#controllers\\/[^']+_controller'\\)\\n/g,'');\
+		c=c.replace(/\\n\\/\\/ (?!Auth|Generator|Entity Pages|Application)\\w+ routes[\\s\\S]*?\\.prefix\\('\\/[^']+'\\)/g,'');\
 		fs.writeFileSync('start/routes.ts',c);\
 	"
 	cd sirh-adonis && node ace migration:fresh
